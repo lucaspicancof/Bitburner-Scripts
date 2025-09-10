@@ -1,132 +1,139 @@
 /**
  * Script para comprar e melhorar nós do Hacknet.
  *
- * Uso:
- *   run <este_script> nodes level RAM cores
- * Exemplo:
- *   run <este_script> 10 100 32 10
+ * Modos:
+ * - Alvo (padrão): run <script> nodes level RAM cores
+ * - Auto: run <script> --auto [--reserve N] [--interval ms]
  *
- * Parâmetros:
- * - nodes: quantidade de novos nós para comprar (0 para não comprar)
- * - level: nível alvo para cada nó (1 a 200)
- * - RAM: quantidade-alvo de RAM (1,2,4,8,16,32,64)
- * - cores: núcleos-alvo por nó (1 a 16)
+ * Exemplo alvo: run <script> 10 100 32 10
+ * Exemplo auto: run <script> --auto --reserve 5e6
  *
  * @param {NS} ns
  */
 export async function main(ns) {
-    // Lê flags/argumentos; aceita "--help"
-    const args = ns.flags([["help", false]]);
+    ns.disableLog("sleep");
+    ns.disableLog("getServerMoneyAvailable");
 
-    // Ajuda e validação básica de quantidade de argumentos
-    if (args.help || args._.length < 4) {
+    const flags = ns.flags([
+        ["help", false],
+        ["auto", false],
+        ["reserve", 0],
+        ["interval", 250],
+        ["toast", true],
+    ]);
+
+    if (flags.help || (!flags.auto && flags._.length < 4)) {
         ns.tprint("Este script compra e melhora nós do Hacknet.");
-        ns.tprint("O primeiro argumento é o número de nós extras a comprar. Informe 0 se não quiser comprar novos nós.");
-        ns.tprint(`Uso: run ${ns.getScriptName()} nodes level RAM cores`);
-        ns.tprint("Exemplo:");
-        ns.tprint(`> run ${ns.getScriptName()} 10 100 32 10`);
+        ns.tprint(`Uso alvo: run ${ns.getScriptName()} nodes level RAM cores`);
+        ns.tprint(`Uso auto: run ${ns.getScriptName()} --auto [--reserve N] [--interval ms]`);
+        ns.tprint(`Ex.: run ${ns.getScriptName()} 10 100 32 10`);
+        ns.tprint(`Ex.: run ${ns.getScriptName()} --auto --reserve 5e6`);
         return;
     }
 
-    // Parâmetros posicionais
-    const nodes = args._[0];
-    const lvl = args._[1];
-    const ram = args._[2];
-    const cpu = args._[3];
+    const validRam = [1, 2, 4, 8, 16, 32, 64];
 
-    // Número atual de nós e total alvo após compras
-    const cnodes = ns.hacknet.numNodes();
-    var tnodes = cnodes + nodes;
-
-    // Validação: nível (1..200)
-    if (lvl > 200 || lvl < 1){
-        ns.tprint("Nível de nó inválido! Deve estar entre 1 e 200!");
-        ns.tprint("Tente novamente com um número válido!");
-        return;
-    }
-
-    // Validação: RAM deve ser uma potência de 2 (entre as abaixo)
-    const validram = [1, 2, 4, 8, 16, 32, 64];
-    if (!(validram.includes(ram))){
-        ns.tprint("Quantidade de RAM inválida! Deve ser estritamente 1, 2, 4, 8, 16, 32 ou 64!");
-        ns.tprint("Tente novamente com um número válido!");
-        return;
-    }
-
-    // Validação: núcleos (1..16)
-    if (cpu > 16 || cpu < 1){
-        ns.tprint("Quantidade de núcleos inválida! Deve estar entre 1 e 16!");
-        ns.tprint("Tente novamente com um número válido!");
-        return;
-    }
-
-    // Não ultrapassar o máximo de nós permitido pelo jogo
-    if (tnodes > ns.hacknet.maxNumNodes()) {
-        ns.tprint("Número máximo de nós atingido!");
-        tnodes = ns.hacknet.maxNumNodes();        
-    }
-
-    ns.tprint("Comprando " + nodes + " novos nós");
-
-    // Compra nós até alcançar o total desejado; espera ter dinheiro suficiente
-    while (ns.hacknet.numNodes() < tnodes) {
-        let cost = ns.hacknet.getPurchaseNodeCost();
-        while (ns.getServerMoneyAvailable("home") < cost) {
-            ns.print("Necessário $" + cost + " . Disponível $" + ns.getServerMoneyAvailable("home"));
-            await ns.sleep(3000);
+    const waitForMoney = async (amount) => {
+        while (ns.getServerMoneyAvailable("home") - flags.reserve < amount) {
+            await ns.sleep(flags.interval);
         }
-        let res = ns.hacknet.purchaseNode();
-        ns.toast("Nó do Hacknet comprado com índice " + res);
+    };
+
+    const maxNodes = ns.hacknet.maxNumNodes();
+
+    let targetNodes, targetLvl, targetRam, targetCores;
+    if (flags.auto) {
+        targetNodes = maxNodes;
+        targetLvl = 200;
+        targetRam = 64;
+        targetCores = 16;
+    } else {
+        const nodes = Number(flags._[0]);
+        const lvl = Number(flags._[1]);
+        const ram = Number(flags._[2]);
+        const cpu = Number(flags._[3]);
+
+        if (!Number.isFinite(nodes) || !Number.isFinite(lvl) || !Number.isFinite(ram) || !Number.isFinite(cpu)) {
+            ns.tprint("Parâmetros inválidos.");
+            return;
+        }
+        if (lvl < 1 || lvl > 200) {
+            ns.tprint("Nível inválido (1..200).");
+            return;
+        }
+        if (!validRam.includes(ram)) {
+            ns.tprint("RAM inválida (1,2,4,8,16,32,64).");
+            return;
+        }
+        if (cpu < 1 || cpu > 16) {
+            ns.tprint("Núcleos inválidos (1..16).");
+            return;
+        }
+
+        const current = ns.hacknet.numNodes();
+        targetNodes = Math.min(current + Math.max(0, nodes), maxNodes);
+        targetLvl = lvl;
+        targetRam = ram;
+        targetCores = cpu;
+        if (targetNodes > current) ns.tprint("Comprando " + (targetNodes - current) + " novos nós");
     }
 
-    // Upgrade de nível até o alvo especificado
-    for (let i = 0; i < tnodes; i++) {
-        if (ns.hacknet.getNodeStats(i).level == 200){
-            continue; // já está no máximo de nível
+    const canImprove = () => {
+        if (ns.hacknet.numNodes() < targetNodes) return true;
+        for (let i = 0; i < ns.hacknet.numNodes(); i++) {
+            const s = ns.hacknet.getNodeStats(i);
+            if (s.level < targetLvl) return true;
+            if (s.ram < targetRam) return true;
+            if (s.cores < targetCores) return true;
         }
-        while (ns.hacknet.getNodeStats(i).level < lvl) {
-            let cost = ns.hacknet.getLevelUpgradeCost(i, 1);
-            while (ns.getServerMoneyAvailable("home") < cost) {
-                ns.print("Necessário $" + cost + " . Disponível $" + ns.getServerMoneyAvailable("home"));
-                await ns.sleep(3000);
+        return false;
+    };
+
+    while (canImprove()) {
+        const actions = [];
+        if (ns.hacknet.numNodes() < targetNodes) {
+            const cost = ns.hacknet.getPurchaseNodeCost();
+            if (isFinite(cost)) actions.push({ kind: "buy-node", cost });
+        }
+        const count = ns.hacknet.numNodes();
+        for (let i = 0; i < count; i++) {
+            const s = ns.hacknet.getNodeStats(i);
+            if (s.level < targetLvl && s.level < 200) {
+                const c = ns.hacknet.getLevelUpgradeCost(i, 1);
+                if (isFinite(c)) actions.push({ kind: "lvl", i, cost: c });
             }
-            let res = ns.hacknet.upgradeLevel(i, 1);
-        }
-    }
-    ns.tprint("Todos os nós atualizados para o nível " + lvl);
-
-    // Upgrade de RAM até o alvo especificado
-    for (let i = 0; i < tnodes; i++) {
-        if (ns.hacknet.getNodeStats(i).ram == 64){
-            continue; // já está no máximo de RAM
-        }
-        while (ns.hacknet.getNodeStats(i).ram < ram) {
-            let cost = ns.hacknet.getRamUpgradeCost(i, 1);
-            while (ns.getServerMoneyAvailable("home") < cost) {
-                ns.print("Necessário $" + cost + " . Disponível $" + ns.getServerMoneyAvailable("home"));
-                await ns.sleep(3000);
+            if (s.ram < targetRam && s.ram < 64) {
+                const c = ns.hacknet.getRamUpgradeCost(i, 1);
+                if (isFinite(c)) actions.push({ kind: "ram", i, cost: c });
             }
-            let res = ns.hacknet.upgradeRam(i, 1);
-        }
-    }
-    ns.tprint("Todos os nós atualizados para " + ram + "GB de RAM");
-
-    // Upgrade de núcleos até o alvo especificado
-    for (let i = 0; i < tnodes; i++) {
-        if (ns.hacknet.getNodeStats(i).cores == 16){
-            continue; // já está no máximo de núcleos
-        }
-        while (ns.hacknet.getNodeStats(i).cores < cpu) {
-            let cost = ns.hacknet.getCoreUpgradeCost(i, 1);
-            while (ns.getServerMoneyAvailable("home") < cost) {
-                ns.print("Necessário $" + cost + " . Disponível $" + ns.getServerMoneyAvailable("home"));
-                await ns.sleep(3000);
+            if (s.cores < targetCores && s.cores < 16) {
+                const c = ns.hacknet.getCoreUpgradeCost(i, 1);
+                if (isFinite(c)) actions.push({ kind: "core", i, cost: c });
             }
-            let res = ns.hacknet.upgradeCore(i, 1);
         }
+
+        if (actions.length === 0) break;
+        actions.sort((a, b) => a.cost - b.cost);
+        const act = actions[0];
+        await waitForMoney(act.cost);
+
+        if (act.kind === "buy-node") {
+            const idx = ns.hacknet.purchaseNode();
+            if (flags.toast) ns.toast("Nó do Hacknet comprado: " + idx, "success", 3000);
+        } else if (act.kind === "lvl") {
+            ns.hacknet.upgradeLevel(act.i, 1);
+        } else if (act.kind === "ram") {
+            ns.hacknet.upgradeRam(act.i, 1);
+        } else if (act.kind === "core") {
+            ns.hacknet.upgradeCore(act.i, 1);
+        }
+
+        await ns.sleep(flags.interval);
     }
 
-    // Finalização
-    ns.tprint("Todos os nós atualizados para " + cpu + " núcleos");
-    ns.tprint("Atualização do Hacknet concluída!");
+    if (!flags.auto) {
+        ns.tprint("Alvos atingidos: nós=" + targetNodes + ", nível=" + targetLvl + ", RAM=" + targetRam + "GB, núcleos=" + targetCores);
+    } else {
+        ns.tprint("Modo auto: não há upgrades viáveis no momento.");
+    }
 }
