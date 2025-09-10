@@ -1,0 +1,204 @@
+var servernames = Array(//   |HackLv|Nports|
+   "n00dles", //			     |    1	|   0	 |
+   "foodnstuff", //		     |    1	|   0	 |
+   "sigma-cosmetics", //	  |    5	|   0	 |
+   "joesguns", //	           |   10	|	 0	 |
+   "nectar-net", //		     |   20	|	 0	 |
+   "hong-fang-tea", //	     |   30	|	 0	 |
+   "harakiri-sushi", //	     |   40	|	 0	 |
+   "neo-net", //			     |   50	|	 1	 |
+   "CSEC", //			        |   57	|	 1	 |
+   "zer0", //			        |   75	|	 1	 |
+   "max-hardware", //		  |   80	|	 1	 |
+   "iron-gym", //		        |  100	|	 1	 |
+   "phantasy", //            |  100	|	 2	 |
+   "silver-helix", //		  |  150	|	 2	 |
+   "avmnite-02h", //		     |  207	|	 2	 |
+   "omega-net", //		     |  214	|	 2	 |
+   "johnson-ortho", //		  |  253	|	 2	 |
+   "crush-fitness", //		  |  263	|	 2	 |
+   "the-hub", //			     |  315	|	 2	 |
+   "comptek", //			     |  316	|	 3	 |
+   "I.I.I.I", //			     |  351	|	 3	 |
+   "netlink", //			     |  414 |	 3	 |
+   "rothman-uni", //		     |  420 |	 3	 |
+   "catalyst", //		        |  446 |	 3	 |
+   "summit-uni", //		     |  454 |	 3	 |
+   "rho-construction", //	  |  476 |	 3	 |
+   "millenium-fitness", //   |  484 |	 3	 |
+   "aevum-police", //		  |  436 |	 4	 |
+   "run4theh111z", //		  |  520 |	 4	 |
+   ".", //	            	  |  538 |	 4	 |
+   "alpha-ent", //		     |  581 |	 4	 |
+   "syscore", //			     |  592 |	 4	 |
+   "lexo-corp", //		     |  732 |	 4	 |
+   "snap-fitness", //		  |  767 |	 4	 |
+   "nova-med", //		        |  786 |	 4	 |
+   "applied-energetics", //  |  791 |	 4	 |
+   "zb-def", //			     |  792 |	 4	 |
+   "unitalife", //		     |  798 |	 4	 |
+   "global-pharm", //	     |  842 |	 4	 |
+   "univ-energy", //		     |  847 |	 4	 |
+   "zb-institute", //		  |  738 |	 5	 |
+   "solaris", //			     |  810 |	 5	 |
+   "zeus-med", //		        |  814 |	 5	 |
+   "vitalife", //		        |  823 |	 5	 |
+   "deltaone", //		        |  829 |	 5	 |
+   "titan-labs", //		     |  836 |	 5	 |
+   "microdyne", //		     |  838 |	 5	 |
+   "galactic-cyber", //	     |  857 |	 5	 |
+   "icarus", //			     |  867 |	 5	 |
+   "omnia", //			        |  868 |	 5	 |
+   "helios", //			     |  878 |	 5	 |
+   "aerocorp", //		        |  902 |	 5	 |
+   "stormtech", //		     |  908 |	 5	 |
+   'defcomm', //			     |  913 |	 5	 |
+   "4sigma", //			     |  916 |	 5	 |
+   "infocomm", //		        |  925 |	 5	 |
+   "The-Cave", //		        |  925 |	 5	 |
+   "taiyang-digital", //	  |  944 |	 5	 |
+   "b-and-a", //			     |  966 |	 5	 |
+   "blade", //			        |  967 |	 5	 |
+   "powerhouse-fitness", //  |  988 |	 5	 |
+   "clarkinc", //		        | 1090 |	 5	 |
+   "kuai-gong", //		     | 1093 |	 5	 |
+   "omnitek", //			     | 1095 |	 5	 |
+   "fulcrumtech", //		     | 1154 |	 5	 |
+   "ecorp", //			        | 1255 |	 5	 |
+   "megacorp", //		        | 1259 |	 5	 |
+   "nwo", //			        | 1260 |	 5	 |
+   "fulcrumassets", //		  | 1457 |	 5	 |
+   "w0r1d_d43m0n" //         | 3000 |   5	 |
+);
+//Numero de servidores com dinheiro
+var nsh = 0;
+var th = (getServerMaxRam("home")*0.95)/2.4/62;
+
+
+for (i = 0; i < servernames.length; i++) {
+   tprint("==================================");
+   tprint(servernames[i]);
+   tprint("==================================");
+   //tprint("Connected to home");
+   //connect("home");
+   tprint("Starting to open portst:");
+   var money = getServerMaxMoney(servernames[i]);
+   if (hasRootAccess(servernames[i]) == false){
+      if (fileExists("BruteSSH.exe", "home")) {
+         tprint("Openend SSH Port");
+         brutessh(servernames[i]);
+      }
+      if (fileExists("FTPCrack.exe", "home")) {
+         tprint("Openend FTP Port");
+         ftpcrack(servernames[i]);
+      }
+      if (fileExists("RelaySMTP.exe", "home")) {
+         tprint("Openend SMTP Port");
+         relaysmtp(servernames[i]);
+      }
+      if (fileExists("HTTPWorm.exe", "home")) {
+         tprint("Openend HTTP Port");
+         httpworm(servernames[i]);
+      }
+      if (fileExists("SQLInject.exe", "home")) {
+         tprint("Openend SQL Port");
+         sqlinject(servernames[i]);
+      }
+      nuke(servernames[i]);
+      tprint("Gainend ROOT Access");
+   }
+   else{
+      tprint("Already have ROOT Access");
+   }
+   tprint("==================================");
+   tprint("Now connect to " + servernames[i]);
+   //installBackdoor(servernames[i]);
+   var ram = getServerMaxRam(servernames[i]);
+   tprint("The server has " + ram + "GB of RAM");
+   var threads;
+   switch (ram) {
+      case 4: threads = 1
+         break;
+      case 8: threads = 3
+         break;
+      case 16: threads = 6
+         break;
+      case 32: threads = 13
+         break;
+      case 64: threads = 26
+         break;
+      case 128: threads = 51
+         break;
+      case 256: threads = 104
+         break;
+      case 512: threads = 208;
+         break;
+      case 1024: threads = 418;
+         break;
+      default: threads = 1
+         break;
+   }
+   if (servernames[i]=="n00dles"){
+      tprint("==================================");
+      scp("n0.js", "home", servernames[i]);
+      scp("n02.js", "home", servernames[i]);
+      tprint("Copied n0.js and n02.js Scripts to "+servernames[i])
+      tprint("==================================");
+      exec("n0.js",servernames[i]);
+      exec("n02.js",servernames[i]);
+      exec("n03.js","home");
+      exec("n04.js","home");
+      tprint("Started n0.js and n02.js on " + servernames[i] + " successfull!");
+      tprint("Started n04.js and n03.js on 'home' successfull!");
+      tprint("==================================");
+      tprint(" ");
+      tprint(" ");
+      sleep(2000);
+   }
+   else if(money == 0) {
+
+      tprint("Money available on server is 0");
+      tprint("==================================");
+      tprint(" ");
+      tprint(" ");
+      sleep(1000);
+   }   
+   else {
+      tprint("And run your script with t= "+threads);
+      tprint("==================================");
+      //rm("hack.js", "home", servernames[i]);
+      scp("hack.js", "home", servernames[i]);
+      tprint("Copied hack.js Scripts to "+servernames[i])
+      tprint("==================================");
+      if (isRunning("hack.js", servernames[i]) == true){
+			kill("hack.js", servernames[i]);
+		}
+		else{}
+      exec("hack.js", servernames[i], threads);
+      exec("hackfhome.js", "home", th , servernames[i])
+      tprint("Started " + "hack.js" + " on " + servernames[i] + " successfull!");
+      if (isRunning("hackfhome.js", "home", servernames[i]) == true){
+					kill("hackfhome.js", "home", servernames[i]);
+				}else{}
+			if (th >= 1){
+				exec("hackfhome.js", "home", th , servernames[i]);
+				tprint("Running hackfhome.js with t= "+th);
+				tprint("Started hackfhome.js on 'home' successfull!");
+				tprint("==================================================");
+			}
+			else{
+				tprint("Threads on home is less then 1");
+				tprint("==================================================");
+			}
+			
+      nsh++;
+      tprint(" ");
+      tprint(" ");
+      tprint("==================================");
+      tprint("Servers with money: "+nsh);
+      tprint("==================================");
+      tprint(" ");
+      tprint(" ");
+      sleep(2000);
+   }
+}
