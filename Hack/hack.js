@@ -1,34 +1,52 @@
-/** @param {NS} ns **/
+/**
+ * Hack contínuo em um servidor alvo com thresholds configuráveis.
+ *
+ * Uso: run Hack/hack.js [alvo] [pctDinheiro=0.75] [offsetSeg=3]
+ * - alvo: nome do servidor alvo (padrão: host atual)
+ * - pctDinheiro: fração do dinheiro máximo a manter (0–1)
+ * - offsetSeg: offset acima da segurança mínima antes de enfraquecer
+ *
+ * @param {NS} ns
+ */
 export async function main(ns) {
+  // Parâmetros e thresholds
+  const target = ns.args[0] || ns.getHostname();
+  const pctMoney = Number(ns.args[1] ?? 0.75);
+  const secOffset = Number(ns.args[2] ?? 3);
 
-    // Programa para hack automatico no proprio servidor
+  const maxMoney = ns.getServerMaxMoney(target);
+  const minSec = ns.getServerMinSecurityLevel(target);
+  const moneyThreshold = maxMoney * pctMoney;
+  const secThreshold = minSec + secOffset;
 
-    // Nome do servidor alvo
-    var target_server = ns.getHostname(); 
+  // Logs menos verbosos
+  ns.disableLog('sleep');
+  ns.disableLog('getServerSecurityLevel');
+  ns.disableLog('getServerMoneyAvailable');
 
-    // Máximo de quantidade de dinheiro no servidor
-    var max_money_server = ns.getServerMaxMoney(target_server) * 0.75; 
+  // Avisos úteis
+  if (maxMoney === 0) {
+    ns.tprint(`Aviso: ${target} não possui dinheiro (hack sem efeito).`);
+  }
+  if (!ns.hasRootAccess(target)) {
+    ns.tprint(`Aviso: sem root em ${target}. Ganhos podem ser nulos/baixos.`);
+  }
 
-    // nivel minimo de segurança o sevidor
-    var min_security_level = ns.getServerMinSecurityLevel(target_server) + 5; 
-    // inicio do loop
-    while(true) {
-        // Se o nivel de segurança atual for maoir que o nivel minimo(+5)
-        if (ns.getServerSecurityLevel(target_server) > min_security_level) { 
-            await ns.weaken(target_server);
-            await ns.sleep(3000);
-        } 
+  // Loop principal: weaken -> grow -> hack
+  while (true) {
+    const sec = ns.getServerSecurityLevel(target);
+    const money = ns.getServerMoneyAvailable(target);
 
-        // Se o dinheiro disponivel do servidor for menor do que 75% do dinheiro máximo
-        else if (ns.getServerMoneyAvailable(target_server) < max_money_server) { 
-            await ns.grow(target_server);
-            await ns.sleep(3000);
-        }
-        
-        // Se tudo estiver ok: 
-        else {
-            await ns.hack(target_server);
-            await ns.sleep(3000);
-        }
-    }    
+    if (sec > secThreshold) {
+      ns.print(`Weaken -> seg ${sec.toFixed(2)} > alvo ${secThreshold.toFixed(2)}`);
+      await ns.weaken(target);
+    } else if (money < moneyThreshold) {
+      ns.print(`Grow   -> $${Math.floor(money)} < alvo $${Math.floor(moneyThreshold)}`);
+      await ns.grow(target);
+    } else {
+      ns.print(`Hack   -> ok (seg ${sec.toFixed(2)}, $${Math.floor(money)})`);
+      await ns.hack(target);
+    }
+  }
 }
+
