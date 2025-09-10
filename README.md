@@ -75,15 +75,5 @@ Todas as mensagens dos scripts principais estão em PT‑BR e vários arquivos p
 
 - Caixa mínimo no bot de ações: o script preserva `minimumCash` antes de comprar novas ações.
 - Unidades inteiras de ação: a API trata ações como inteiros; caso veja valores fracionários, a compra será truncada/ajustada internamente.
-- Possível melhoria no bot de ações: referências a `portfolio.value`/`portfolio.shares` devem usar o índice do item, ex.: `portfolio[i].value`. Se quiser, posso aplicar essa correção.
 - Scripts de backdoor com Singularity exigem SF‑4 e privilégios adequados.
 - Sempre monitore a RAM disponível antes de disparar vários scripts em paralelo.
-
-## Contribuição / Próximos Passos
-
-- Padronizar logs e tradução PT‑BR em todos os scripts.
-- Corrigir e aprimorar lógica do bot de ações (gestão de risco, arredondamento de ações, take‑profit/stop‑loss configuráveis).
-- Ampliar cobertura do `autosolver` para mais tipos de contratos.
-- Pequenas refatorações para reutilizar utilitários (scan/exec/deploy).
-
-Bom jogo e bons lucros!
