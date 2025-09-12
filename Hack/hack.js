@@ -35,6 +35,10 @@ export async function main(ns) {
   ns.disableLog('getServerMaxMoney');
   ns.disableLog('getServerMinSecurityLevel');
   ns.disableLog('exec');
+  ns.disableLog('getServerMaxRam');
+  ns.disableLog('getServerUsedRam');
+  ns.disableLog('getScriptRam');
+  ns.disableLog('isRunning');
 
   // Warnings
   const maxMoney0 = ns.getServerMaxMoney(target);
@@ -102,4 +106,3 @@ async function runAndWait(ns, script, host, threads, target) {
   if (!pid) { await ns.sleep(200); return; }
   while (ns.isRunning(pid)) await ns.sleep(50);
 }
-

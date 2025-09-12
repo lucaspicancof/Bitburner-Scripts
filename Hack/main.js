@@ -12,6 +12,13 @@ export async function main(ns) {
   ns.disableLog('sleep');
   ns.disableLog('exec');
   ns.disableLog('scp');
+  ns.disableLog('getServerNumPortsRequired');
+  ns.disableLog('getServerMaxMoney');
+  ns.disableLog('getServerRequiredHackingLevel');
+  ns.disableLog('getHackingLevel');
+  ns.disableLog('getServerMaxRam');
+  ns.disableLog('getServerUsedRam');
+  ns.disableLog('isRunning');
 
   const pctMoney = Number(ns.args[0] ?? 0.75);
   const secOffset = Number(ns.args[1] ?? 3);
@@ -57,6 +64,8 @@ export async function main(ns) {
       if (pid) {
         launched.add(key);
         ns.print(`Started ${controller} on ${host} -> ${s}`);
+        // Pequena pausa para não lançar muitos de uma vez
+        await ns.sleep(50);
       }
     }
 
