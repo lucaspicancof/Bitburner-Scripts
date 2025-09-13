@@ -1,97 +1,103 @@
 /**
  * Bot de ações (Stock Market) para Bitburner.
  *
- * Estratégia simples:
- * - Compra quando o forecast superar um limiar e a volatilidade for baixa.
- * - Vende quando o forecast cair abaixo de um limite ou quando houver lucro > 10%.
- * - Mantém uma reserva mínima de dinheiro.
+ * Estratégia simples e robusta (apenas posição comprada/long):
+ * - Compra quando o forecast ≥ buyThresh e a volatilidade ≤ maxVol.
+ * - Vende quando o forecast ≤ sellThresh, ou lucro ≥ takeProfit, ou perda ≤ stopLoss.
+ * - Mantém uma reserva mínima de dinheiro e limita o gasto por ativo.
  *
- * Observação: este script não aceita argumentos; ajuste as constantes abaixo.
+ * Observação: ajuste as constantes abaixo conforme seu apetite de risco.
  * @param {NS} ns
  */
 export async function main(ns) {
-	// Log inicial e desabilitar logs verbosos
-	ns.print("Iniciando script aqui");
-	ns.disableLog('sleep');
-	ns.disableLog('getServerMoneyAvailable');
+  // Parâmetros de estratégia
+  const buyThresh = 0.65;      // Compra se forecast ≥ 0.65
+  const sellThresh = 0.55;     // Vende se forecast ≤ 0.55
+  const takeProfit = 0.10;     // Realiza lucro com ≥ 10%
+  const stopLoss = -0.07;      // Stop loss com ≤ -7%
+  const maxVol = 0.06;         // Volatilidade máxima para comprar
+  const reserveCash = 50e6;    // Caixa mínimo a manter
+  const perStockFrac = 0.25;   // No máx 25% do excedente por ativo
+  const cycleMs = 6000;        // Intervalo do ciclo
 
-	// Símbolos disponíveis e portfólio atual
-	let stockSymbols = ns.stock.getSymbols(); // todos os símbolos
-	let portfolio = []; // inicializa o portfólio
-	let cycle = 0;
-	// ~~~~~~~Você pode editar estes valores~~~~~~~~
-	const forecastThresh = 0.65; // Comprar acima deste nível de confiança (forecast%)
-	const minimumCash = 50000000; // Dinheiro mínimo para manter em caixa
-	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ns.disableLog('sleep');
+  ns.disableLog('getServerMoneyAvailable');
 
-	// Verifica e adiciona ao portfólio as ações que já possuímos
-	ns.print("Iniciando execução - Já possuímos alguma ação?");
-	for (const stock of stockSymbols) {
-		let pos = ns.stock.getPosition(stock);
-		if (pos[0] > 0) {
-			portfolio.push({ sym: stock, value: pos[1], shares: pos[0] })
-			ns.print('Detectado: ' + stock + ' qtde: ' + pos[0] + ' @ ' + pos[1]);
-		};
-	};
+  const symbols = ns.stock.getSymbols();
+  let cycle = 0;
 
-	// Loop principal do bot
-	while (true) {
-		for (const stock of stockSymbols) { // para cada símbolo de ação
-			if (portfolio.findIndex(obj => obj.sym === stock) !== -1) { // se já possuímos esta ação
-				let i = portfolio.findIndex(obj => obj.sym === stock); // índice do símbolo no portfólio
-				if (ns.stock.getAskPrice(stock) >= portfolio.value * 1.1) { // se preço >= preço de compra +10%, então VENDE
-					sellStock(stock);
-				}
-				else if (ns.stock.getForecast(stock) < 0.4) {
-					sellStock(stock);
-				}
-			}
+  while (true) {
+    for (const sym of symbols) {
+      const [longShares, avgPrice] = ns.stock.getPosition(sym);
+      const forecast = ns.stock.getForecast(sym);
+      const vol = ns.stock.getVolatility(sym);
+      const bid = ns.stock.getBidPrice(sym); // preço de venda
+      const ask = ns.stock.getAskPrice(sym); // preço de compra
 
-			else if (ns.stock.getForecast(stock) >= forecastThresh) { // se forecast >= limiar e não possuímos, então COMPRA
-				buyStock(stock);
-			}
-		} // fim do for (iterando stockSymbols)
-		cycle++;
-		if (cycle % 5 === 0) { ns.print('Ciclo ' + cycle + ' concluído') };
-		await ns.sleep(6000);
-	} // fim do while(true)
+      if (longShares > 0) {
+        const profitPct = avgPrice > 0 ? (bid / avgPrice - 1) : 0;
+        if (forecast <= sellThresh || profitPct >= takeProfit || profitPct <= stopLoss) {
+          const soldAt = ns.stock.sellStock(sym, longShares);
+          ns.print(`SELL ${sym} x${longShares} @ ${fmt2(soldAt ?? bid)} | Pct=${fmtPct(profitPct)} F=${fmtPct(forecast, true)}`);
+          await ns.sleep(20);
+        }
+        continue;
+      }
 
-	// Compra uma ação se a volatilidade for baixa
-	function buyStock(stock) {
-		let stockPrice = ns.stock.getAskPrice(stock); // obtém o preço atual (ask)
-		let shares = stockBuyQuantCalc(stockPrice, stock); // calcula a quantidade de ações a comprar
+      // Sem posição, avaliar compra
+      if (forecast >= buyThresh && vol <= maxVol) {
+        const freeCash = Math.max(0, ns.getServerMoneyAvailable('home') - reserveCash);
+        if (freeCash <= 0) continue;
+        const maxSpend = freeCash * perStockFrac;
+        const maxShares = ns.stock.getMaxShares(sym);
+        const toBuy = Math.min(Math.floor(maxSpend / ask), maxShares);
+        if (toBuy > 0) {
+          const paidAt = ns.stock.buyStock(sym, toBuy);
+          if (paidAt) ns.print(`BUY  ${sym} x${toBuy} @ ${fmt2(paidAt)} | F=${fmtPct(forecast, true)} V=${fmtPct(vol, true)}`);
+          await ns.sleep(20);
+        }
+      }
+    }
 
-		if (ns.stock.getVolatility(stock) <= 0.05) { // se volatilidade < 5%, compra
-			ns.stock.buyStock(stock, shares);
-			ns.print('Comprado: ' + stock + ' qtde: ' + Math.round(shares) + ' @ ' + Math.round(stockPrice));
+    cycle++;
+    if (cycle % 10 === 0) printSummary(ns, symbols);
+    await ns.sleep(cycleMs);
+  }
 
-			portfolio.push({ sym: stock, value: stockPrice, shares: shares }); // armazena a compra no portfólio
-		}
-	}
+  function printSummary(ns, symbols) {
+    let invested = 0;
+    let equity = 0;
+    for (const sym of symbols) {
+      const [sh, avg] = ns.stock.getPosition(sym);
+      if (sh > 0) {
+        const bid = ns.stock.getBidPrice(sym);
+        invested += sh * avg;
+        equity += sh * bid;
+      }
+    }
+    const pnl = equity - invested;
+    const pct = invested > 0 ? (pnl / invested) : 0;
+    ns.print(`Resumo: Investido=$${fmt(invested)} Equity=$${fmt(equity)} PnL=$${fmt(pnl)} (${fmtPct(pct)})`);
+  }
 
-	// Vende uma ação se as condições de saída forem atendidas
-	function sellStock(stock) {
-		let position = ns.stock.getPosition(stock);
-		var forecast = ns.stock.getForecast(stock);
-		if (forecast < 0.55) {
-			let i = portfolio.findIndex(obj => obj.sym === stock); // encontra a ação no portfólio
-			ns.print('VENDIDO: ' + stock + ' qtde: ' + portfolio.shares + ' @ ' + portfolio.value);
-			portfolio.splice(i, 1); // remove a ação do portfólio
-			ns.stock.sellStock(stock, position[0]);
+  function fmt(n) {
+    if (!isFinite(n)) return String(n);
+    const abs = Math.abs(n);
+    if (abs >= 1e12) return (n / 1e12).toFixed(2) + 't';
+    if (abs >= 1e9)  return (n / 1e9).toFixed(2) + 'b';
+    if (abs >= 1e6)  return (n / 1e6).toFixed(2) + 'm';
+    if (abs >= 1e3)  return (n / 1e3).toFixed(2) + 'k';
+    return n.toFixed(2);
+  }
 
-		}
-	};
+  function fmt2(n) {
+    return isFinite(n) ? Number(n).toFixed(2) : String(n);
+  }
 
-	// Calcula quantas ações comprar com base no caixa disponível
-	function stockBuyQuantCalc(stockPrice, stock) { // calcula quantas ações comprar
-		let playerMoney = ns.getServerMoneyAvailable('home') - minimumCash;
-		let maxSpend = playerMoney * 0.25; // usa no máximo 25% do excedente
-		let calcShares = maxSpend / stockPrice;
-		let maxShares = ns.stock.getMaxShares(stock);
-
-		if (calcShares > maxShares) {
-			return maxShares
-		}
-		else { return calcShares }
-	}
+  function fmtPct(p, asPercent = false) {
+    const v = asPercent ? p * 100 : p * 100;
+    const s = v >= 0 ? '+' : '';
+    return s + v.toFixed(1) + '%';
+  }
 }
+
