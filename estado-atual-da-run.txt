@@ -1,0 +1,106 @@
+# PERFIL DA RUN
+
+Data de início:
+11/06/2026
+
+Objetivos principais:
+
+- Reaprender o estado atual do jogo.
+- Reconstruir minha biblioteca de scripts.
+- Criar uma infraestrutura própria de automação.
+- Entender as mudanças ocorridas desde as versões que eu jogava.
+
+Status Atual:
+
+Hack Level:
+106
+
+Dinheiro:
+$2.415.501
+
+Home RAM:
+8 GB
+
+TOR:
+Não
+
+Factions:
+Nenhuma
+
+Augmentations:
+Nenhuma
+
+Source Files:
+Nenhum
+
+BitNode:
+BN1.1
+
+Observações:
+
+- Progressão inicial já estabelecida.
+- Hacking saiu de 1 para 106.
+- Primeiros programas obtidos:
+  - NUKE.exe
+  - BruteSSH.exe
+  - FTPCrack.exe
+  - relaySMTP.exe
+  - DeepscanV1.exe
+  - ServerProfiler.exe
+  - AutoLink.exe
+- Possui acesso ao Dark Web.
+- Nenhuma faction ingressada ainda.
+- Nenhuma augmentation instalada.
+- Nenhum Source File desbloqueado.
+- Home continua com apenas 8 GB de RAM.
+- Já existem scripts próprios sendo desenvolvidos.
+
+Decisões arquiteturais já tomadas:
+
+- Separação entre script específico de alvo (n00dles.js) e script genérico (hack.js).
+- Criação de um arquivo principal (main.js) para futura orquestração.
+- Primeiros testes de monitoramento realizados em test.js.
+
+Biblioteca de scripts atual:
+
+- n00dles.js
+  - Loop simples de weaken/grow/hack para alvo fixo.
+
+- hack.js
+  - Script genérico baseado em getHostname().
+
+- test.js
+  - Testes de monitoramento de dinheiro.
+
+- main.js
+  - Arquivo criado para futura expansão.
+
+Análise técnica:
+
+- hack.js utiliza hackAnalyzeChance() para decidir weaken.
+  Isso funciona, mas é uma heurística relativamente fraca.
+  A arquitetura moderna normalmente toma decisões usando:
+
+  - Security atual vs mínima
+  - Dinheiro atual vs máximo
+
+  em vez de usar apenas chance de hack.
+
+- O script específico n00dles.js já está mais próximo dessa abordagem.
+
+- Ainda não existe:
+  - scanner de rede
+  - descoberta automática de servidores
+  - deploy automático
+  - biblioteca compartilhada
+  - sistema de seleção de alvo
+
+Próximas metas:
+
+1. Criar scanner de rede recursivo.
+2. Criar biblioteca comum (/lib).
+3. Descobrir automaticamente todos os servidores acessíveis.
+4. Construir sistema de deploy remoto.
+5. Criar analisador de servidores.
+6. Definir critérios para seleção automática de alvo.
+7. Expandir RAM do home antes de arquiteturas mais complexas.

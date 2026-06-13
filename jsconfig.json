@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "checkJs": true, "module": "esnext", "target": "esnext" },
+  "include": ["src/**/*", "NetScriptDefinitions.d.ts"]
+}

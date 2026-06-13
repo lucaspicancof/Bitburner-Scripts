@@ -1,0 +1,8 @@
+node_modules/
+NetScriptDefinitions.d.ts
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.tmp
+*.swp
+*~
