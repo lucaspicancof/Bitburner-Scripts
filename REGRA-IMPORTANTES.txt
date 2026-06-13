@@ -1,1 +1,0 @@
-The documentation at readthedocs is outdated and unmaintained. Do not use them!
