@@ -1,97 +1,86 @@
 # Bitburner Scripts
 
-Scripts para automação da run atual de Bitburner, sincronizados via `bitburner-filesync`.
+Esse repositório é a minha infraestrutura de automação para o [Bitburner](https://github.com/bitburner-official/bitburner-src). Voltei a jogar depois de um bom tempo parado e decidi reconstruir minha biblioteca de scripts do zero — dessa vez com uma arquitetura limpa, modular e versionada de verdade, em vez de ir colando código solto no editor do jogo.
 
-## Como iniciar o sync
+A ideia central é tratar o jogo como uma plataforma de programação: escrevo tudo aqui no disco, com autocomplete e type-check da API, e sincronizo automaticamente para dentro do jogo.
 
-Na raiz do repositório:
+## Como eu sincronizo com o jogo
+
+Uso o [`bitburner-filesync`](https://github.com/bitburner-official/bitburner-filesync). Na raiz do repo:
 
 ```
 npx bitburner-filesync
 ```
 
-O processo fica em watch e envia para o jogo qualquer arquivo alterado dentro de `src/`.
+Ele fica observando a pasta `src/` e empurra qualquer alteração para o jogo. Para conectar, é só ir em **Options → Remote API**, apontar para a porta **12525** e clicar em **Connect**. Quando conecto, todos os arquivos de `src/` são enviados de uma vez.
 
-## Como conectar pelo jogo
+Só a pasta `src/` é sincronizada — ela espelha o `home` do jogo:
 
-1. No jogo: **Options → Remote API**
-2. Definir a porta: **12525**
-3. Clicar em **Connect**
+| No disco                 | No jogo (home)      |
+|--------------------------|---------------------|
+| `src/lib/`               | `lib/`              |
+| `src/scripts/workers/`   | `scripts/workers/`  |
+| `src/scripts/managers/`  | `scripts/managers/` |
+| `src/analysis/`          | `analysis/`         |
+| `src/dashboards/`        | `dashboards/`       |
 
-Ao conectar, todos os arquivos de `src/` são enviados automaticamente (`pushAllOnConnection: true`).
+> **Nota:** deixei `allowDeletingFiles: true` no `filesync.json`, então apagar um arquivo aqui também o remove do jogo na próxima sincronização. Se eu apagar algo, reinicio o filesync para ele propagar.
 
-## Mapeamento src/ → home do jogo
-
-| Diretório local          | Diretório no jogo (home)  |
-|--------------------------|---------------------------|
-| `src/lib/`               | `lib/`                    |
-| `src/scripts/`           | `scripts/`                |
-| `src/scripts/managers/`  | `scripts/managers/`       |
-| `src/scripts/workers/`   | `scripts/workers/`        |
-| `src/analysis/`          | `analysis/`               |
-| `src/dashboards/`        | `dashboards/`             |
-
-## Regra sobre LEGADO/
-
-A pasta `LEGADO/` contém os scripts da run anterior e é **somente leitura / referência**.
-
-- Não é sincronizada com o jogo (`scriptsFolder` aponta para `src/`, não para a raiz).
-- Não deve ser editada, movida ou deletada.
-- Use-a apenas para consultar implementações anteriores ao portar lógica para `src/`.
-
-## Arquitetura
+## Como organizei
 
 ```
 src/
 ├── lib/                  bibliotecas compartilhadas (puras, sem main)
-│   ├── network.js        scanAll + analyzeServer
-│   ├── scoring.js        modelo de score econômico / prep / ready
-│   ├── targets.js        rankTargets — seleção de alvos
-│   ├── hgw.js            planejamento de batch HWGW (usa Formulas API)
+│   ├── network.js        varredura da rede + análise de servidor
+│   ├── scoring.js        meu modelo de score econômico / prep / ready
+│   ├── targets.js        ranqueamento e seleção de alvos
+│   ├── hgw.js            planejamento de batches HWGW (via Formulas API)
 │   ├── ram.js            pool de RAM distribuída + dispatch de workers
-│   ├── pathfind.js       BFS de rotas (backdoor)
-│   ├── hacknet.js        ROI de upgrades de hacknet
-│   └── prep.js           cálculo de threads de prep (consumido por análises)
+│   ├── pathfind.js       BFS de rotas na rede (usado pro backdoor)
+│   ├── hacknet.js        cálculo de ROI dos upgrades de hacknet
+│   └── prep.js           threads de prep (consumido pelas análises)
 ├── scripts/
 │   ├── workers/          primitivos atômicos: hack / grow / weaken
-│   │                     (aceitam delay em ms para alinhar landings de batch)
-│   └── managers/         loops de automação contínua
-│       ├── batch-manager.js    ← CORE: hacking HWGW com ondas sobrepostas
-│       └── hacknet-manager.js  compra de upgrades de hacknet por ROI
-├── analysis/             ferramentas de relatório (rodar sob demanda)
+│   │                     (aceitam delay em ms pra alinhar os landings)
+│   └── managers/         os loops de automação contínua
+│       ├── batch-manager.js     coração do hacking: HWGW em ondas
+│       └── hacknet-manager.js   compra upgrades de hacknet por ROI
+├── analysis/             relatórios que rodo sob demanda
 │   ├── targets-report.js, server-info.js
 │   ├── hacknet-analyzer.js, prep-analyzer.js
-│   └── backdoor-helper.js      gera comandos connect+backdoor p/ factions
-├── dashboards/           overlays visuais (UI HTML)
-└── *.js                  utilitários de terminal: nuke, scan, prep, ver
+│   └── backdoor-helper.js       monta os comandos de backdoor pras factions
+├── dashboards/           overlays visuais (UI em HTML)
+└── *.js                  utilitários soltos de terminal: nuke, scan, prep, ver
 ```
 
-## Uso — fluxo principal
+A regra que sigo é manter as `lib/` puras (sem `main`, só funções reutilizáveis) e deixar toda a lógica de orquestração nos `managers/`. Os `workers/` são propositalmente burros: só executam um `hack`/`grow`/`weaken` com um delay opcional, pra eu conseguir alinhar os landings de um batch.
+
+## Fluxo que eu uso
 
 ```
-run nuke.js                          # abre portas + nuke em toda a rede
-run scan.js top                      # mostra os melhores alvos
-run scripts/managers/batch-manager.js   # inicia o hacking HWGW automático
-run scripts/managers/hacknet-manager.js # automatiza upgrades de hacknet
+run nuke.js                               # abre portas e dá nuke na rede toda
+run scan.js top                           # vê os melhores alvos do momento
+run scripts/managers/batch-manager.js     # liga o hacking HWGW automático
+run scripts/managers/hacknet-manager.js   # automatiza os upgrades de hacknet
 ```
 
-O `batch-manager` escolhe o alvo automaticamente, faz prep quando necessário e
-dispara ondas de batches HWGW sobrepostos usando toda a RAM com root. Flags:
+O `batch-manager` escolhe o alvo sozinho, faz o prep quando precisa e dispara ondas de batches HWGW sobrepostos usando toda a RAM em que tenho root. Quando quero forçar parâmetros:
 
 ```
 run scripts/managers/batch-manager.js --target phantasy --fraction 0.5 --spacing 200
 ```
 
-## Backdoors (manual — exige SF4 para automatizar)
+## Backdoors
+
+Instalar backdoor não dá pra automatizar sem o Source-File 4 (Singularity), então fiz um helper que pelo menos monta o caminho pra mim:
 
 ```
-run analysis/backdoor-helper.js              # status dos servidores de faction
-run analysis/backdoor-helper.js CSEC         # gera os comandos connect+backdoor
+run analysis/backdoor-helper.js           # status dos servidores de faction
+run analysis/backdoor-helper.js CSEC      # gera a linha de connect + backdoor
 ```
 
-Copie a linha gerada e cole no terminal do jogo.
+Aí é só copiar a linha gerada e colar no terminal do jogo.
 
-## Regra sobre `allowDeletingFiles`
+## Sobre a pasta `LEGADO/`
 
-Está em `true` no `filesync.json`: deletar um arquivo de `src/` no disco também
-o remove do jogo na próxima sincronização. Reinicie o filesync após deleções.
+São meus scripts antigos, de runs passadas. Mantenho só como referência histórica — pra consultar ideias antigas e comparar com a abordagem nova. Não sincronizo nem mexo nessa pasta; o `filesync` aponta só pra `src/`.
