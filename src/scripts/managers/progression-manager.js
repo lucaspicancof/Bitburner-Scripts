@@ -5,6 +5,8 @@ import {
     ownedOrQueued,
     queuedCount
 } from "/lib/augmentations.js";
+import { factionRates } from "/lib/forecast.js";
+import { publish } from "/lib/telemetry.js";
 
 /**
  * Progression Manager — automatiza rep farming + compra de augmentations.
@@ -61,6 +63,7 @@ export async function main(ns) {
                 stopWork(ns);
             }
             printStatus(ns, totalBought, "AGUARDANDO INSTALL", null);
+            publishProgress(ns, totalBought, null);
             await ns.sleep(30000);
             continue;
         }
@@ -79,6 +82,7 @@ export async function main(ns) {
             printStatus(ns, totalBought, lastAction, null);
         }
 
+        publishProgress(ns, totalBought, target);
         await ns.sleep(10000);
     }
 }
@@ -106,6 +110,38 @@ function stopWork(ns) {
     if (work && work.type === "FACTION") {
         ns.singularity.stopAction();
     }
+}
+
+/** Publica o snapshot de progressão pro dashboard (aba Factions). */
+function publishProgress(ns, bought, target) {
+    const factions = ns.getPlayer().factions;
+    const rates = factionRates(ns);
+
+    const factionRows = factions.map(name => ({
+        name,
+        rep: ns.singularity.getFactionRep(name),
+        favor: ns.singularity.getFactionFavor(name)
+    }));
+
+    let targetObj = null;
+    if (target) {
+        const r = rates[target.faction];
+        targetObj = {
+            aug: target.aug,
+            faction: target.faction,
+            repHave: target.repHave,
+            repReq: target.repReq,
+            etaMin: r > 0 ? (target.repReq - target.repHave) / r : null
+        };
+    }
+
+    publish(ns, "progression", {
+        factions,
+        factionRows,
+        queued: queuedCount(ns),
+        bought,
+        target: targetObj
+    });
 }
 
 function printStatus(ns, bought, action, target) {

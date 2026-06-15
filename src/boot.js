@@ -22,4 +22,9 @@ export async function main(ns) {
     } else {
         ns.tprint(`boot: AVISO — ${overlord} não encontrado.`);
     }
+
+    // Sobe o HUD (não é supervisionado — o usuário pode fechá-lo à vontade).
+    if (ns.fileExists("dashboards/dashboard.js", "home")) {
+        ns.run("dashboards/dashboard.js");
+    }
 }

@@ -2,6 +2,7 @@ import { planBatch, planPrep, isPrepped, WORKER_RAM } from "/lib/hgw.js";
 import { getRamPool, totalThreadsAvailable, dispatch } from "/lib/ram.js";
 import { scanAll } from "/lib/network.js";
 import { rankTargets } from "/lib/targets.js";
+import { publish } from "/lib/telemetry.js";
 
 const HACK = "/scripts/workers/hack.js";
 const GROW = "/scripts/workers/grow.js";
@@ -89,6 +90,16 @@ export async function main(ns) {
         const waveDuration = plan.duration + numBatches * 4 * spacing + 500;
 
         printStatus(ns, target, plan, launched, numBatches, poolThreads);
+
+        publish(ns, "hack", {
+            target,
+            hackPct: plan.realFraction * 100,
+            yield: plan.expectedYield,
+            threads: plan.totalThreads,
+            launched,
+            planned: numBatches,
+            weakenTime: plan.weakenTime
+        });
 
         await ns.sleep(waveDuration);
     }

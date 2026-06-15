@@ -59,6 +59,16 @@ Pra ver a conta por trás disso a qualquer momento:
 run analysis/rep-forecast.js    # taxa de rep, ordem de compra e onde está o joelho
 ```
 
+## HUD
+
+Cansei de ficar abrindo `tail` de script em script pra saber o que tá rolando, então fiz um dashboard de verdade — uma janela em HTML/CSS, arrastável, com abas: Geral, Hack, Hacknet, Factions e Scripts. Dá pra navegar entre uma visão geral da run e o detalhe de cada área.
+
+```
+run dashboards/dashboard.js
+```
+
+O truque pra não pesar: ele não calcula nada de Singularity (que custaria 16x de RAM). Cada manager publica um snapshot do próprio estado num arquivo (um barramento de telemetria em `lib/telemetry.js`), e o HUD só lê esses snapshots. Assim ele fica leve e cada aba reflete o estado real do manager — se o batch-manager não tá rodando, a aba Hack mostra "offline". O que é barato (dinheiro, RAM da rede, hacknet, scripts) ele calcula sozinho na hora.
+
 ## Backdoors
 
 Backdoor também dá pra automatizar com Singularity, mas fiz esse helper antes de descobrir isso — ele monta o caminho pra eu colar no terminal:
