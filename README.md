@@ -63,7 +63,7 @@ run analysis/rep-forecast.js    # taxa de rep, ordem de compra e onde está o jo
 
 ## HUD
 
-Cansei de ficar abrindo `tail` de script em script pra saber o que tá rolando, então fiz um dashboard de verdade — uma janela em HTML/CSS, arrastável, com abas: Geral, Hack, Hacknet, Factions e Scripts. Dá pra navegar entre uma visão geral da run e o detalhe de cada área.
+Cansei de ficar abrindo `tail` de script em script pra saber o que tá rolando, então fiz um dashboard de verdade — uma janela em HTML/CSS, arrastável e minimizável, com abas: Geral, Scan, Hack, Hacknet, Factions e Scripts. A aba Geral tem sparklines de renda/dinheiro/hacking (séries que ele guarda em memória) e uma contagem regressiva pro próximo reset; a Scan mostra a rede inteira ranqueada por potencial, com root e backdoor.
 
 ```
 run dashboards/dashboard.js

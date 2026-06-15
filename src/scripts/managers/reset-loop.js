@@ -1,5 +1,6 @@
 import { queuedCount, buyMaxNeuroFlux } from "/lib/augmentations.js";
 import { simulateTimeline, findKnee } from "/lib/forecast.js";
+import { publish } from "/lib/telemetry.js";
 
 /**
  * Reset Loop — orquestrador de topo. Mantém a stack viva e decide sozinho
@@ -101,6 +102,18 @@ export async function main(ns) {
             stalledMs >= effectiveMs;
 
         printStatus(ns, { queued, minAugs, stalledMs, effectiveMin, kneeAugs, flags });
+
+        publish(ns, "reset", {
+            queued,
+            minAugs,
+            effectiveMin,
+            stalledMin: stalledMs / 60000,
+            kneeAugs,
+            monitorOnly: flags["no-install"],
+            installInMin: (!flags["no-install"] && queued >= minAugs)
+                ? Math.max(0, (effectiveMs - stalledMs) / 60000)
+                : null
+        });
 
         if (shouldInstall) {
             ns.toast(`reset-loop: instalando ${queued} augs e reiniciando`, "success", null);
