@@ -1,9 +1,9 @@
 /**
- * Startup pós-reset. Chamado automaticamente pelo install.js após instalar augs
- * (a Singularity reinicia o jogo e roda este script). Relança a stack inteira.
+ * Startup pós-reset. Chamado automaticamente após instalar augs (a Singularity
+ * reinicia o jogo e roda este script). Recupera root e sobe o orquestrador.
  *
- * Como o aug install zera o root de todos os servidores e mata os scripts,
- * a ordem importa: primeiro nuke (recupera root), depois os managers.
+ * Só lança nuke + reset-loop: o reset-loop é quem supervisiona e relança os
+ * demais managers (batch, hacknet, progression), então não duplico aqui.
  *
  * @param {NS} ns
  */
@@ -14,20 +14,12 @@ export async function main(ns) {
     // Dá tempo do nuke abrir portas antes de farmar.
     await ns.sleep(3000);
 
-    const managers = [
-        "scripts/managers/batch-manager.js",
-        "scripts/managers/hacknet-manager.js",
-        "scripts/managers/progression-manager.js"
-    ];
+    const overlord = "scripts/managers/reset-loop.js";
 
-    for (const m of managers) {
-        if (ns.fileExists(m, "home")) {
-            ns.run(m);
-            ns.tprint(`boot: ${m} iniciado`);
-        } else {
-            ns.tprint(`boot: AVISO — ${m} não encontrado`);
-        }
+    if (ns.fileExists(overlord, "home")) {
+        ns.run(overlord);
+        ns.tprint("boot: reset-loop iniciado (supervisiona o resto).");
+    } else {
+        ns.tprint(`boot: AVISO — ${overlord} não encontrado.`);
     }
-
-    ns.tprint("boot: stack relançada.");
 }

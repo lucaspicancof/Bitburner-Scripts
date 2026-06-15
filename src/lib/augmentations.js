@@ -93,3 +93,36 @@ export function queuedCount(ns) {
     const installed = ns.singularity.getOwnedAugmentations(false).length;
     return all - installed;
 }
+
+/**
+ * Compra NeuroFlux repetidamente enquanto houver rep e dinheiro.
+ * NFG é o único aug repetível — bom dreno pro dinheiro excedente antes do reset.
+ * @param {NS} ns
+ * @returns {number} quantos níveis comprou
+ */
+export function buyMaxNeuroFlux(ns) {
+    const factions = ns.getPlayer().factions;
+    if (factions.length === 0) return 0;
+
+    let bought = 0;
+
+    while (true) {
+        // Faction com maior rep tende a permitir o próximo nível de NFG.
+        const faction = factions
+            .slice()
+            .sort((a, b) =>
+                ns.singularity.getFactionRep(b) - ns.singularity.getFactionRep(a)
+            )[0];
+
+        const price = ns.singularity.getAugmentationPrice(NEUROFLUX);
+        const repReq = ns.singularity.getAugmentationRepReq(NEUROFLUX);
+
+        if (ns.singularity.getFactionRep(faction) < repReq) break;
+        if (ns.getServerMoneyAvailable("home") < price) break;
+        if (!ns.singularity.purchaseAugmentation(faction, NEUROFLUX)) break;
+
+        bought++;
+    }
+
+    return bought;
+}

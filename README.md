@@ -39,7 +39,17 @@ run install.js                                 # confirma o reset e reinicia tud
 run install.js --nfg                           # idem, gastando o excedente em NeuroFlux
 ```
 
-O `install.js` chama `installAugmentations` passando o `boot.js`, que roda depois do reset e relança a stack inteira (nuke + os managers). Como tudo isso usa Singularity, o progression-manager precisa de bastante RAM no home — uns 400-550 GB. Confiro o custo com `mem` antes.
+O `install.js` chama `installAugmentations` passando o `boot.js`, que roda depois do reset e relança a stack inteira. Como tudo isso usa Singularity, o progression-manager precisa de bastante RAM no home — uns 400-550 GB. Confiro o custo com `mem` antes.
+
+### Ligo e esqueço
+
+Por cima de tudo tem o `reset-loop`, que é o orquestrador de topo: ele mantém os outros managers vivos (relança qualquer um que morra) e decide sozinho a hora de instalar. A regra que usei é simples — os primeiros augs entram na fila rápido, depois o farm de rep estagna; quando a fila não cresce há um tempo, o retorno virou marginal e ele dá o reset. Aí o `boot.js` sobe ele de novo e o ciclo recomeça.
+
+```
+run scripts/managers/reset-loop.js                  # autônomo, fecha o ciclo sozinho
+run scripts/managers/reset-loop.js --max-farm-min 45 --nfg
+run scripts/managers/reset-loop.js --no-install     # só supervisiona, não reseta
+```
 
 ## Backdoors
 
