@@ -1,35 +1,44 @@
 import { queuedCount, buyMaxNeuroFlux } from "/lib/augmentations.js";
+import { simulateTimeline, findKnee } from "/lib/forecast.js";
 
 /**
  * Reset Loop — orquestrador de topo. Mantém a stack viva e decide sozinho
  * a hora de instalar os augs, fechando o ciclo farma → compra → instala → repete.
  *
- * Heurística de install (sem matemática frágil de taxa de rep):
- *   os primeiros augs entram na fila rápido; conforme a rep fica cara, o farm
- *   estagna. Quando a fila NÃO cresce há `maxFarmMin` minutos e há pelo menos
- *   `minAugs` enfileirados, o retorno de continuar farmando virou marginal →
- *   instala. O timeout captura o ponto de retornos decrescentes naturalmente.
+ * Em modo --auto (padrão), recalcula o "joelho" da curva de rep a cada ~60s
+ * (mesma lib do rep-forecast) e usa a sugestão como timeout — então conforme o
+ * favor sobe e as taxas mudam, o ponto de reset se ajusta sozinho.
+ *
+ * Heurística de install: instala quando a fila NÃO cresce há `effectiveTimeout`
+ * minutos e há ≥ `min-augs` enfileirados (retornos decrescentes = hora de resetar).
  *
  * @param {NS} ns
  * Flags:
- *   --min-augs <n>      mínimo na fila pra valer o reset (default 1)
- *   --max-farm-min <m>  minutos sem a fila crescer antes de instalar (default 30)
+ *   --auto              recalcula o timeout pelo joelho (padrão: ligado)
+ *   --max-farm-min <m>  timeout fixo (sem --auto) ou piso (com --auto). Default 30
+ *   --min-augs <n>      mínimo na fila pra valer o reset. Default 1
  *   --nfg               compra NeuroFlux com o excedente antes de instalar
- *   --no-install        só supervisiona a stack, nunca instala (modo monitor)
+ *   --no-install        só supervisiona a stack, nunca instala
  */
 export async function main(ns) {
     ns.disableLog("ALL");
     ns.ui.openTail();
 
     const flags = ns.flags([
-        ["min-augs", 1],
+        ["auto", true],
         ["max-farm-min", 30],
+        ["min-augs", 1],
         ["nfg", false],
         ["no-install", false]
     ]);
 
     const minAugs = flags["min-augs"];
-    const maxFarmMs = flags["max-farm-min"] * 60 * 1000;
+    const fallbackMin = flags["max-farm-min"];
+
+    // Limites de sanidade pro timeout dinâmico.
+    const FLOOR_MIN = 10;
+    const CEIL_MIN = 120;
+    const RECOMPUTE_MS = 60000;
 
     const CHILDREN = [
         "scripts/managers/batch-manager.js",
@@ -40,8 +49,12 @@ export async function main(ns) {
     let lastQueued = queuedCount(ns);
     let lastGrowth = Date.now();
 
+    let effectiveMin = fallbackMin;
+    let kneeAugs = null;
+    let lastForecast = 0;
+
     while (true) {
-        // --- 1) Supervisão: relança qualquer filho que tenha morrido ---
+        // --- 1) Supervisão: relança filhos mortos ---
         for (const child of CHILDREN) {
             if (ns.fileExists(child, "home") && !ns.scriptRunning(child, "home")) {
                 ns.run(child);
@@ -49,55 +62,79 @@ export async function main(ns) {
             }
         }
 
-        // --- 2) Acompanha o crescimento da fila ---
+        // --- 2) Auto-calibração do timeout (a cada ~60s) ---
+        if (flags.auto && Date.now() - lastForecast >= RECOMPUTE_MS) {
+            lastForecast = Date.now();
+            try {
+                const { timeline } = simulateTimeline(ns);
+                const { suggestedMin, augsAtKnee } = findKnee(timeline);
+                if (suggestedMin != null) {
+                    effectiveMin = Math.min(CEIL_MIN, Math.max(FLOOR_MIN, fallbackMin, suggestedMin));
+                    kneeAugs = augsAtKnee;
+                } else {
+                    // Nada mais a farmar → instala logo (timeout no piso).
+                    effectiveMin = FLOOR_MIN;
+                    kneeAugs = 0;
+                }
+            } catch (e) {
+                effectiveMin = fallbackMin; // fallback seguro
+            }
+        } else if (!flags.auto) {
+            effectiveMin = fallbackMin;
+        }
+
+        // --- 3) Acompanha o crescimento da fila ---
         const queued = queuedCount(ns);
         if (queued > lastQueued) {
             lastQueued = queued;
             lastGrowth = Date.now();
         }
-
         const stalledMs = Date.now() - lastGrowth;
+        const effectiveMs = effectiveMin * 60000;
 
-        // --- 3) Decisão de install ---
+        // --- 4) Decisão de install ---
         const shouldInstall =
             !flags["no-install"] &&
             queued >= minAugs &&
-            stalledMs >= maxFarmMs;
+            stalledMs >= effectiveMs;
 
-        printStatus(ns, queued, minAugs, stalledMs, maxFarmMs, flags["no-install"]);
+        printStatus(ns, { queued, minAugs, stalledMs, effectiveMin, kneeAugs, flags });
 
         if (shouldInstall) {
             ns.toast(`reset-loop: instalando ${queued} augs e reiniciando`, "success", null);
-
             if (flags.nfg) {
                 const n = buyMaxNeuroFlux(ns);
                 if (n > 0) ns.toast(`NeuroFlux x${n}`, "success");
             }
-
-            // installAugmentations reinicia o jogo e roda boot.js (relança a stack).
             ns.singularity.installAugmentations("boot.js");
-            return; // não alcançado — o reset mata este script
+            return; // o reset mata este script
         }
 
         await ns.sleep(15000);
     }
 }
 
-function printStatus(ns, queued, minAugs, stalledMs, maxFarmMs, monitorOnly) {
+function printStatus(ns, s) {
     ns.clearLog();
     ns.print("=== RESET LOOP (overlord) ===");
     ns.print("");
-    ns.print(`Augs na fila:   ${queued} (mínimo p/ reset: ${minAugs})`);
-    ns.print(`Fila parada há: ${(stalledMs / 60000).toFixed(1)} min`);
-    ns.print(`Limite de farm: ${(maxFarmMs / 60000).toFixed(0)} min`);
+    ns.print(`Augs na fila:   ${s.queued} (mínimo p/ reset: ${s.minAugs})`);
+    ns.print(`Fila parada há: ${(s.stalledMs / 60000).toFixed(1)} min`);
+
+    if (s.flags.auto) {
+        const knee = s.kneeAugs != null ? ` (joelho ~${s.kneeAugs} augs)` : "";
+        ns.print(`Timeout (auto): ${s.effectiveMin} min${knee}`);
+    } else {
+        ns.print(`Timeout (fixo): ${s.effectiveMin} min`);
+    }
     ns.print("");
 
-    if (monitorOnly) {
+    if (s.flags["no-install"]) {
         ns.print("Modo: MONITOR (não instala)");
-    } else if (queued < minAugs) {
+    } else if (s.queued < s.minAugs) {
         ns.print("Status: acumulando augs...");
     } else {
-        const left = Math.max(0, (maxFarmMs - stalledMs) / 60000);
+        const left = Math.max(0, (s.effectiveMin * 60000 - s.stalledMs) / 60000);
         ns.print(`Status: instala em ~${left.toFixed(1)} min se a fila não crescer`);
     }
 
