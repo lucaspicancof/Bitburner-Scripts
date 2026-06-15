@@ -27,9 +27,23 @@ run scripts/managers/batch-manager.js     # liga o hacking
 run scripts/managers/hacknet-manager.js   # cuida do hacknet
 ```
 
+## Progressão (factions + augs)
+
+Descobri que a Singularity API funciona mesmo sem o Source-File 4 — só custa 16x de RAM. Como dinheiro não é problema, dá pra comprar RAM de home e automatizar a parte chata: farmar reputação e comprar augmentation.
+
+O `progression-manager` varre as factions em que entrei, compra todo aug que já tenho rep pra pegar (do mais caro pro mais barato, que é a ordem certa), e quando falta rep ele vai trabalhar pra faction com o menor gap. Não instala sozinho — quando esgota o que dá pra comprar, ele me avisa e espera eu rodar o `install.js`.
+
+```
+run scripts/managers/progression-manager.js   # farma rep e compra augs
+run install.js                                 # confirma o reset e reinicia tudo
+run install.js --nfg                           # idem, gastando o excedente em NeuroFlux
+```
+
+O `install.js` chama `installAugmentations` passando o `boot.js`, que roda depois do reset e relança a stack inteira (nuke + os managers). Como tudo isso usa Singularity, o progression-manager precisa de bastante RAM no home — uns 400-550 GB. Confiro o custo com `mem` antes.
+
 ## Backdoors
 
-Não dá pra automatizar backdoor sem o Source-File 4, então fiz um helper que pelo menos monta o caminho:
+Backdoor também dá pra automatizar com Singularity, mas fiz esse helper antes de descobrir isso — ele monta o caminho pra eu colar no terminal:
 
 ```
 run analysis/backdoor-helper.js           # status dos servidores de faction
