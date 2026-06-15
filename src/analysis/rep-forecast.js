@@ -106,18 +106,40 @@ export async function main(ns) {
         ns.tprint(`  ${String(h).padStart(3)} min  →  ${count} augs`);
     }
 
-    // --- Sugestão de max-farm-min ---
+    // --- Detecção do "joelho": onde o custo marginal por aug dispara ---
+    // Resetar passando do joelho é ROI ruim — melhor banar favor e voltar.
     ns.tprint("");
-    if (timeline.length >= 2) {
-        // Maior intervalo entre compras consecutivas = quanto o timeout precisa tolerar.
-        let maxGap = timeline[0].at;
-        for (let i = 1; i < timeline.length; i++) {
-            maxGap = Math.max(maxGap, timeline[i].at - timeline[i - 1].at);
-        }
+    ns.tprint("=== CUSTO MARGINAL (min p/ o próximo aug) ===");
+    ns.tprint("");
+
+    const gaps = timeline.map((t, i) =>
+        i === 0 ? t.at : t.at - timeline[i - 1].at
+    );
+
+    // Mediana dos gaps "baratos" iniciais (primeira metade) como referência.
+    const early = gaps.slice(0, Math.max(1, Math.ceil(gaps.length / 2)));
+    const sorted = [...early].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)] || 1;
+
+    // Joelho = primeiro gap que passa de 2x a mediana inicial.
+    let kneeIdx = gaps.findIndex((g, i) => i > 0 && g > median * 2);
+    if (kneeIdx === -1) kneeIdx = gaps.length; // sem joelho claro
+
+    timeline.forEach((t, i) => {
+        const mark = i === kneeIdx ? "  ← joelho (resetar aqui)" : "";
         ns.tprint(
-            `Maior intervalo entre augs: ${maxGap.toFixed(0)} min. ` +
-            `Sugestão: --max-farm-min ${Math.ceil(maxGap * 1.3)} ` +
-            `(30% de folga).`
+            `  #${String(i + 1).padStart(2)}  +${gaps[i].toFixed(0).padStart(4)} min${mark}`
+        );
+    });
+
+    ns.tprint("");
+    if (kneeIdx > 0 && kneeIdx <= gaps.length) {
+        const lastGoodGap = gaps[kneeIdx - 1];
+        const augsAtKnee = kneeIdx;
+        const suggestion = Math.ceil(lastGoodGap * 1.3);
+        ns.tprint(
+            `Sugestão: --max-farm-min ${suggestion}  ` +
+            `(~${augsAtKnee} augs/reset, para antes do grind caro).`
         );
     }
     ns.tprint("");
