@@ -1,183 +1,93 @@
-import {
-    getStage,
-    getMaxPayback,
-    formatPayback,
-    getBestUpgrade,
-    buyUpgrade
-}
-from "/lib/hacknet.js";
+import { getAllUpgrades, buyUpgrade, formatPayback } from "/lib/hacknet.js";
 
-/** @param {NS} ns **/
+/**
+ * Hacknet Manager — reset-aware.
+ *
+ * Como o hacknet é zerado a cada install de aug e rende uma fração ínfima da
+ * renda do batch, só faz sentido comprar upgrades que se pagam ANTES do próximo
+ * reset. Este manager compra agressivamente tudo com payback abaixo do limite
+ * (liquidez inicial de cada reset) e simplesmente para quando nada mais qualifica.
+ *
+ * @param {NS} ns
+ * Flags:
+ *   --max-payback-min <m>  só compra upgrades que pagam em < m minutos. Default 10
+ *   --reserve <$>          dinheiro a preservar. Default 0
+ */
 export async function main(ns) {
-
     ns.disableLog("ALL");
+    ns.ui.openTail();
 
-    try {
-        ns.ui.openTail();
-    } catch {}
+    const flags = ns.flags([
+        ["max-payback-min", 10],
+        ["reserve", 0]
+    ]);
 
-    const RESERVE_MONEY =
-        5_000_000_000;
+    const maxPaybackSec = flags["max-payback-min"] * 60;
+    const reserve = flags.reserve;
 
-    let purchases = 0;
+    let bought = 0;
     let spent = 0;
-    let lastPurchase = "None";
+    let last = "—";
 
     while (true) {
+        const money = ns.getServerMoneyAvailable("home");
+        const upgrades = getAllUpgrades(ns);
+        const best = upgrades[0] || null;
 
-        const money =
-            ns.getServerMoneyAvailable("home");
+        let acted = false;
 
-        const nodes =
-            ns.hacknet.numNodes();
+        if (best) {
+            const qualifies = best.payback <= maxPaybackSec;
+            const affordable = money - best.cost >= reserve;
 
-        const stage =
-            getStage(nodes);
-
-        const maxPayback =
-            getMaxPayback(stage);
-
-        const best =
-            getBestUpgrade(ns);
-
-        ns.clearLog();
-
-        ns.print("");
-        ns.print("=== HACKNET MANAGER ===");
-        ns.print("");
-
-        ns.print(
-            `Stage: ${stage}`
-        );
-
-        ns.print(
-            `Nodes: ${nodes}`
-        );
-
-        ns.print(
-            `Money: ${ns.format.number(money)}`
-        );
-
-        ns.print(
-            `Reserve: ${ns.format.number(RESERVE_MONEY)}`
-        );
-
-        ns.print("");
-
-        if (!best) {
-
-            ns.print(
-                "No upgrades available."
-            );
-
-            await ns.sleep(10000);
-            continue;
-        }
-
-        ns.print("=== BEST UPGRADE ===");
-        ns.print("");
-
-        ns.print(
-            `Type: ${best.type}`
-        );
-
-        ns.print(
-            `Node: ${best.node}`
-        );
-
-        ns.print(
-            `Cost: ${ns.format.number(best.cost)}`
-        );
-
-        ns.print(
-            `Gain/s: ${best.gain.toFixed(3)}`
-        );
-
-        ns.print(
-            `Payback: ${formatPayback(best.payback)}`
-        );
-
-        ns.print("");
-
-        const enoughMoney =
-            money - best.cost > RESERVE_MONEY;
-
-        const goodPayback =
-            best.payback <= maxPayback;
-
-        ns.print("=== CONDITIONS ===");
-        ns.print("");
-
-        ns.print(
-            `Money OK: ${enoughMoney}`
-        );
-
-        ns.print(
-            `Payback OK: ${goodPayback}`
-        );
-
-        ns.print("");
-
-        if (
-            enoughMoney &&
-            goodPayback
-        ) {
-
-            const success =
-                buyUpgrade(ns, best);
-
-            if (success !== false) {
-
-                purchases++;
-
-                spent += best.cost;
-
-                lastPurchase =
-                    `${best.type} Node ${best.node}`;
-
-                ns.print("");
-                ns.print("PURCHASED");
-
-                ns.print(
-                    `${lastPurchase}`
-                );
-
-                ns.print(
-                    `${ns.format.number(best.cost)}`
-                );
+            if (qualifies && affordable) {
+                if (buyUpgrade(ns, best) !== false) {
+                    bought++;
+                    spent += best.cost;
+                    last = `${best.type} #${best.node < 0 ? "novo" : best.node}`;
+                    acted = true;
+                }
             }
         }
-        else {
 
-            ns.print("SKIPPED");
+        printStatus(ns, { best, maxPaybackSec, bought, spent, last, acted });
 
-            if (!enoughMoney)
-                ns.print(
-                    "Reason: Reserve protection"
-                );
-
-            if (!goodPayback)
-                ns.print(
-                    `Reason: Payback > ${formatPayback(maxPayback)}`
-                );
-        }
-
-        ns.print("");
-        ns.print("=== STATS ===");
-        ns.print("");
-
-        ns.print(
-            `Purchases: ${purchases}`
-        );
-
-        ns.print(
-            `Spent: ${ns.format.number(spent)}`
-        );
-
-        ns.print(
-            `Last: ${lastPurchase}`
-        );
-
-        await ns.sleep(10000);
+        // Comprou algo → tenta de novo logo (pode haver mais barato em fila);
+        // senão, nada qualifica agora → espera mais.
+        await ns.sleep(acted ? 200 : 5000);
     }
+}
+
+function printStatus(ns, s) {
+    ns.clearLog();
+    ns.print("=== HACKNET MANAGER (reset-aware) ===");
+    ns.print("");
+    ns.print(`Nós:      ${ns.hacknet.numNodes()}`);
+    ns.print(`Produção: ${ns.format.number(totalProduction(ns))}/s`);
+    ns.print(`Limite:   payback < ${formatPayback(s.maxPaybackSec)}`);
+    ns.print("");
+
+    if (s.best) {
+        const ok = s.best.payback <= s.maxPaybackSec;
+        ns.print("Melhor upgrade:");
+        ns.print(`  ${s.best.type} #${s.best.node < 0 ? "novo" : s.best.node}`);
+        ns.print(`  Custo:   ${ns.format.number(s.best.cost)}`);
+        ns.print(`  +$/s:    ${ns.format.number(s.best.gain)}`);
+        ns.print(`  Payback: ${formatPayback(s.best.payback)} ${ok ? "✓" : "✗ (acima do limite)"}`);
+    } else {
+        ns.print("Tudo maxado — nada a comprar.");
+    }
+
+    ns.print("");
+    ns.print(`Comprados: ${s.bought}  |  Gasto: ${ns.format.number(s.spent)}`);
+    ns.print(`Último:    ${s.last}`);
+    ns.print("");
+    ns.print(s.acted ? "Status: comprando..." : "Status: aguardando upgrade que valha a pena");
+}
+
+function totalProduction(ns) {
+    let total = 0;
+    const n = ns.hacknet.numNodes();
+    for (let i = 0; i < n; i++) total += ns.hacknet.getNodeStats(i).production;
+    return total;
 }

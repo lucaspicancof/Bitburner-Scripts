@@ -1,70 +1,44 @@
-import { getBestUpgrade } from "/lib/hacknet.js";
+import { getAllUpgrades, formatPayback } from "/lib/hacknet.js";
 
 /** @param {NS} ns */
 export async function main(ns) {
-
     ns.disableLog("ALL");
+    ns.ui.openTail();
 
     while (true) {
-
-        const upgrades =
-            getBestUpgrade(ns);
-
-        const nodes =
-            ns.hacknet.numNodes();
-
-        const best =
-            upgrades[0];
+        const upgrades = getAllUpgrades(ns);
+        const nodes = ns.hacknet.numNodes();
 
         let totalProduction = 0;
-
         for (let i = 0; i < nodes; i++) {
-
-            totalProduction +=
-                ns.hacknet.getNodeStats(i).production;
+            totalProduction += ns.hacknet.getNodeStats(i).production;
         }
 
         ns.clearLog();
-
-        ns.print("Hacknet Dashboard");
+        ns.print("=== HACKNET DASHBOARD ===");
+        ns.print("");
+        ns.print(`Nós:      ${nodes}`);
+        ns.print(`Produção: ${ns.format.number(totalProduction)}/s`);
         ns.print("");
 
-        ns.print(
-            `Nodes: ${nodes}`
-        );
+        if (upgrades.length === 0) {
+            ns.print("Tudo maxado — nada a comprar.");
+            await ns.sleep(2000);
+            continue;
+        }
 
-        ns.print(
-            `Production: $${totalProduction.toFixed(2)}/s`
-        );
-
+        ns.print("Top ROI (menor payback):");
         ns.print("");
+        ns.print(" TIPO    NÓ   CUSTO        +$/s       PAYBACK");
+        ns.print("-".repeat(48));
 
-        ns.print(
-            "Best Upgrade:"
-        );
-
-        ns.print(
-            `${best.type}`
-        );
-
-        ns.print(
-            `Node: ${best.node}`
-        );
-
-        ns.print(
-            `Cost: ${ns.format.number(best.cost)}`
-        );
-
-        ns.print("");
-
-        ns.print("Top 10 ROI");
-
-        for (const item of upgrades.slice(0, 10)) {
-
+        for (const u of upgrades.slice(0, 10)) {
             ns.print(
-                `${item.type.padEnd(10)} ` +
-                `${String(item.node).padEnd(3)} ` +
-                `${ns.format.number(item.cost)}`
+                `${u.type.padEnd(7)} ` +
+                `${String(u.node < 0 ? "new" : u.node).padEnd(4)} ` +
+                `${ns.format.number(u.cost).padStart(10)} ` +
+                `${ns.format.number(u.gain).padStart(10)} ` +
+                `${formatPayback(u.payback).padStart(8)}`
             );
         }
 

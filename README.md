@@ -24,7 +24,7 @@ O coração é o `batch-manager`: ele escolhe o alvo, faz o prep quando precisa 
 run nuke.js                               # abre portas e dá nuke na rede
 run scan.js top                           # melhores alvos do momento
 run scripts/managers/batch-manager.js     # liga o hacking
-run scripts/managers/hacknet-manager.js   # cuida do hacknet
+run scripts/managers/hacknet-manager.js   # hacknet reset-aware (só payback curto)
 ```
 
 ## Progressão (factions + augs)
