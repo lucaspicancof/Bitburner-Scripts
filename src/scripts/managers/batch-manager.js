@@ -83,8 +83,13 @@ function allocate(ns, spacing, maxTargets) {
         .filter(c => c.potential > 0)
         .sort((a, b) => b.potential - a.potential);
 
-    let poolGB = getRamPool(ns).reduce((sum, h) => sum + h.free, 0);
+    const initialPool = getRamPool(ns).reduce((sum, h) => sum + h.free, 0);
+    let poolGB = initialPool;
     const alloc = [];
+
+    // Teto por alvo: impede que um servidor enorme engula o pool inteiro e
+    // força o scheduler a espalhar entre vários. Com 256TB e 8 alvos → 32TB cada.
+    const maxShareGB = initialPool / maxTargets;
 
     for (const c of candidates) {
         if (alloc.length >= maxTargets || poolGB <= 0) break;
@@ -97,7 +102,7 @@ function allocate(ns, spacing, maxTargets) {
         const satBatches = Math.max(1, Math.floor(plan.weakenTime / (4 * spacing)));
         const usefulGB = satBatches * oneBatchGB;
 
-        const budgetGB = Math.min(usefulGB, poolGB);
+        const budgetGB = Math.min(usefulGB, maxShareGB, poolGB);
         if (budgetGB < oneBatchGB) continue; // nem 1 batch cabe
 
         alloc.push({ target: c.target, potential: c.potential, budgetGB });
