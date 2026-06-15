@@ -41,8 +41,10 @@ export async function main(ns) {
     const RECOMPUTE_MS = 60000;
 
     const CHILDREN = [
+        "scripts/managers/root-manager.js",
         "scripts/managers/batch-manager.js",
         "scripts/managers/hacknet-manager.js",
+        "scripts/managers/faction-manager.js",
         "scripts/managers/progression-manager.js"
     ];
 

@@ -101,3 +101,36 @@ export function isReady(data) {
         READY_SECURITY
     );
 }
+
+/**
+ * Score de POTENCIAL: $/s estimado quando o servidor está PREPARADO (sec mínima,
+ * dinheiro máximo), independente do estado atual. Usa a Formulas API.
+ *
+ * Diferente do effectiveScore (que pondera o estado atual e por isso subestima
+ * servidores grandes ainda despreparados), este mede o quanto o alvo VALE depois
+ * de preparado — é o que deve guiar a escolha de o que preparar/atacar.
+ *
+ * @param {NS} ns
+ * @param {string} server
+ * @returns {number} dinheiro por segundo potencial
+ */
+export function potentialScore(ns, server) {
+    const maxMoney = ns.getServerMaxMoney(server);
+    if (maxMoney <= 0) return 0;
+
+    const fm = ns.formulas.hacking;
+    const player = ns.getPlayer();
+
+    // Servidor no estado preparado.
+    const s = ns.getServer(server);
+    s.hackDifficulty = s.minDifficulty;
+    s.moneyAvailable = s.moneyMax;
+
+    const hackPct = fm.hackPercent(s, player);   // fração roubada por thread
+    const chance = fm.hackChance(s, player);
+    const weakenSec = fm.weakenTime(s, player) / 1000;
+    if (weakenSec <= 0) return 0;
+
+    // Proxy de $/s: dinheiro roubável × chance, normalizado pelo tempo do ciclo.
+    return (maxMoney * hackPct * chance) / weakenSec;
+}

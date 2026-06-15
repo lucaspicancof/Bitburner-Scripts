@@ -1,11 +1,11 @@
 import {
     buildPlan,
     buyableNow,
-    nextRepTarget,
     ownedOrQueued,
     queuedCount
 } from "/lib/augmentations.js";
 import { factionRates } from "/lib/forecast.js";
+import { chooseFarmTarget, value } from "/lib/aug-value.js";
 import { publish } from "/lib/telemetry.js";
 
 /**
@@ -36,8 +36,9 @@ export async function main(ns) {
         const owned = ownedOrQueued(ns);
         const plan = buildPlan(ns);
 
-        // --- 1) COMPRAR o que dá ---
-        const buyable = buyableNow(ns, plan, owned);
+        // --- 1) COMPRAR o que dá (maior valor primeiro) ---
+        const buyable = buyableNow(ns, plan, owned)
+            .sort((a, b) => value(ns, b.aug) - value(ns, a.aug));
         for (const e of buyable) {
             if (ns.singularity.purchaseAugmentation(e.faction, e.aug)) {
                 totalBought++;
@@ -69,8 +70,9 @@ export async function main(ns) {
         }
         notified = false;
 
-        // --- 2) FARMAR rep pro alvo de menor gap ---
-        const target = nextRepTarget(ns, remaining, owned);
+        // --- 2) FARMAR rep pro alvo de maior valor por rep (com guarda de ETA) ---
+        const rates = factionRates(ns);
+        const target = chooseFarmTarget(ns, remaining, owned, rates);
 
         if (target) {
             ensureWorking(ns, target.faction);

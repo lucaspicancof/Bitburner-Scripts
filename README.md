@@ -11,14 +11,14 @@ src/
 ├── lib/          funções reutilizáveis, puras (rede, scoring, batches, ram, hacknet...)
 ├── scripts/
 │   ├── workers/  hack / grow / weaken — primitivos burros, só executam
-│   └── managers/ os loops de automação (batch-manager, hacknet-manager)
+│   └── managers/ os loops de automação (root, batch, hacknet, faction, progression, reset-loop)
 ├── analysis/     relatórios que rodo sob demanda
 └── dashboards/   uns overlays visuais em HTML
 ```
 
 Tento manter as `lib/` sem nenhum `main`, só lógica reutilizável, e deixar a orquestração toda nos `managers/`. Os `workers/` são de propósito o mais simples possível: só fazem um `hack`/`grow`/`weaken` com um delay opcional, que é o que me deixa alinhar os landings de um batch.
 
-O coração é o `batch-manager`: ele escolhe o alvo, faz o prep quando precisa e dispara ondas de batches HWGW sobrepostos usando toda a RAM em que tenho root.
+O coração é o `batch-manager`: ele virou um scheduler multi-alvo — ranqueia os servidores pelo $/s que rendem **depois de preparados**, distribui a RAM entre os melhores até cada um saturar, e sobe um `batch-runner` por alvo (que prepara sozinho se precisar). Antes dele, o `root-manager` recompra os port openers perdidos no reset e vai dando nuke conforme o hacking sobe, pra nunca faltar alvo.
 
 ```
 run nuke.js                               # abre portas e dá nuke na rede
@@ -42,6 +42,8 @@ run install.js --nfg                           # idem, gastando o excedente em N
 O `install.js` chama `installAugmentations` passando o `boot.js`, que roda depois do reset e relança a stack inteira. Como tudo isso usa Singularity, o progression-manager precisa de bastante RAM no home — uns 400-550 GB. Confiro o custo com `mem` antes.
 
 ### Ligo e esqueço
+
+O `faction-manager` fecha o elo da autonomia: pós-reset ele re-backdoora os servidores das factions de hacking (em ordem de dificuldade), viaja pras factions de cidade e aceita os convites sozinho — enquanto o progression farma rep e compra augs por densidade de valor.
 
 Por cima de tudo tem o `reset-loop`, que é o orquestrador de topo: ele mantém os outros managers vivos (relança qualquer um que morra) e decide sozinho a hora de instalar. A regra que usei é simples — os primeiros augs entram na fila rápido, depois o farm de rep estagna; quando a fila não cresce há um tempo, o retorno virou marginal e ele dá o reset. Aí o `boot.js` sobe ele de novo e o ciclo recomeça.
 

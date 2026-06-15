@@ -72,21 +72,6 @@ export function buyableNow(ns, plan, owned) {
         .sort((a, b) => b.price - a.price);
 }
 
-/**
- * Próximo alvo de farm de rep: o aug com o MENOR gap de reputação,
- * entre os que ainda não temos rep mas cujos prereqs já estão garantidos.
- *
- * @param {NS} ns
- * @param {ReturnType<typeof buildPlan>} plan
- * @param {Set<string>} owned
- */
-export function nextRepTarget(ns, plan, owned) {
-    return plan
-        .filter(e => e.repHave < e.repReq)
-        .filter(e => e.prereqs.every(p => owned.has(p)))
-        .sort((a, b) => (a.repReq - a.repHave) - (b.repReq - b.repHave))[0] || null;
-}
-
 /** Quantos augs estão na fila aguardando install. */
 export function queuedCount(ns) {
     const all = ns.singularity.getOwnedAugmentations(true).length;

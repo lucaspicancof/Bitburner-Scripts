@@ -1,185 +1,161 @@
-import { planBatch, planPrep, isPrepped, WORKER_RAM } from "/lib/hgw.js";
-import { getRamPool, totalThreadsAvailable, dispatch } from "/lib/ram.js";
+import { planBatch, WORKER_RAM, isPrepped } from "/lib/hgw.js";
+import { getRamPool } from "/lib/ram.js";
 import { scanAll } from "/lib/network.js";
-import { rankTargets } from "/lib/targets.js";
+import { potentialScore } from "/lib/scoring.js";
 import { publish } from "/lib/telemetry.js";
 
-const HACK = "/scripts/workers/hack.js";
-const GROW = "/scripts/workers/grow.js";
-const WEAKEN = "/scripts/workers/weaken.js";
+const RUNNER = "scripts/managers/batch-runner.js";
 
 /**
- * Batch Manager (HWGW) com ondas sobrepostas.
+ * Batch Manager — SCHEDULER multi-alvo.
  *
- * Fluxo:
- *   1. Escolhe o melhor alvo preparável.
- *   2. Se não estiver preparado → executa prep e espera.
- *   3. Quando preparado → dispara uma onda de batches sobrepostos,
- *      espaçados em 4*spacing ms, até esgotar RAM ou a janela de tempo.
- *   4. Aguarda a onda terminar e repete.
+ * Ranqueia os alvos por $/s POTENCIAL (preparado), aloca o pool de RAM de forma
+ * gulosa — enche cada alvo até o ponto de saturação (concorrência útil × RAM/batch)
+ * antes de passar pro próximo — e mantém um `batch-runner` por alvo com seu orçamento.
+ * Runners despreparados preparam o alvo sozinhos, então alvos de alto potencial são
+ * preparados em paralelo enquanto os prontos são farmados.
  *
  * @param {NS} ns
- * Args opcionais:
- *   --target <host>    fixa um alvo (senão escolhe automaticamente)
- *   --fraction <0..1>  fração de dinheiro roubada por batch (default 0.5)
- *   --spacing <ms>     intervalo entre landings (default 200)
+ * Flags:
+ *   --max-targets <n>  teto de alvos simultâneos. Default 8
+ *   --spacing <ms>     intervalo entre landings. Default 200
+ *   --fraction <0..1>  fração roubada por batch. Default 0.5
  */
 export async function main(ns) {
     ns.disableLog("ALL");
     ns.ui.openTail();
 
     const flags = ns.flags([
-        ["target", ""],
-        ["fraction", 0.5],
-        ["spacing", 200]
+        ["max-targets", 8],
+        ["spacing", 200],
+        ["fraction", 0.5]
     ]);
 
     const spacing = flags.spacing;
     const fraction = flags.fraction;
-    let batchId = 0;
+    const maxTargets = flags["max-targets"];
+
+    // Limpa runners órfãos de uma execução anterior (evita duplicar alvos).
+    for (const p of ns.ps("home")) {
+        if (p.filename === RUNNER) ns.kill(p.pid);
+    }
+
+    // target -> { pid, budgetGB }
+    const running = new Map();
+
+    ns.atExit(() => {
+        for (const { pid } of running.values()) ns.kill(pid);
+    });
 
     while (true) {
-        const target = flags.target || pickTarget(ns);
-
-        if (!target) {
-            ns.print("Nenhum alvo válido. Aguardando...");
-            await ns.sleep(10000);
-            continue;
-        }
-
-        // --- PREP ---
-        if (!isPrepped(ns, target)) {
-            const waited = await runPrep(ns, target, spacing);
-            // Após prep, reavalia do zero.
-            await ns.sleep(waited);
-            continue;
-        }
-
-        // --- BATCHING ---
-        const plan = planBatch(ns, target, fraction, spacing);
-
-        if (!plan) {
-            ns.print(`Plano inviável para ${target}. Aguardando...`);
-            await ns.sleep(5000);
-            continue;
-        }
-
-        // Quantos batches cabem na RAM?
-        const poolThreads = totalThreadsAvailable(ns, WORKER_RAM);
-        const byRam = Math.floor(poolThreads / plan.totalThreads);
-
-        // Quantos batches cabem na janela de tempo (sem colidir landings)?
-        const byTime = Math.max(1, Math.floor(plan.weakenTime / (4 * spacing)));
-
-        const numBatches = Math.max(0, Math.min(byRam, byTime));
-
-        if (numBatches === 0) {
-            ns.print(`RAM insuficiente para 1 batch de ${target}. Aguardando...`);
-            await ns.sleep(plan.duration);
-            continue;
-        }
-
-        // Dispara a onda.
-        let launched = 0;
-        for (let i = 0; i < numBatches; i++) {
-            const offset = i * 4 * spacing;
-            if (launchBatch(ns, plan, offset, batchId++)) launched++;
-            else break; // RAM acabou no meio da onda
-        }
-
-        const waveDuration = plan.duration + numBatches * 4 * spacing + 500;
-
-        printStatus(ns, target, plan, launched, numBatches, poolThreads);
+        const alloc = allocate(ns, spacing, maxTargets);
+        reconcile(ns, running, alloc, spacing, fraction);
 
         publish(ns, "hack", {
-            target,
-            hackPct: plan.realFraction * 100,
-            yield: plan.expectedYield,
-            threads: plan.totalThreads,
-            launched,
-            planned: numBatches,
-            weakenTime: plan.weakenTime
+            count: alloc.length,
+            targets: alloc.map(a => ({
+                name: a.target,
+                potential: a.potential,
+                budgetGB: Math.round(a.budgetGB),
+                prepped: isPrepped(ns, a.target)
+            })),
+            totalBudgetGB: Math.round(alloc.reduce((s, a) => s + a.budgetGB, 0)),
+            estIncomePerSec: alloc.reduce((s, a) => s + a.potential, 0)
         });
 
-        await ns.sleep(waveDuration);
+        printStatus(ns, ns, alloc);
+        await ns.sleep(15000);
     }
 }
 
 /**
- * Dispara os 4 componentes de um batch com os delays do plano + offset da onda.
- * @returns {boolean} true se todos os 4 foram lançados
+ * Decide a lista de alvos e o orçamento (GB) de cada um, gulosamente por potencial.
  */
-function launchBatch(ns, plan, offset, id) {
-    const d = plan.delays;
-    const t = plan.target;
-
-    const h = dispatch(ns, HACK, WORKER_RAM, plan.hackThreads, [t, d.hack + offset, id]);
-    const w1 = dispatch(ns, WEAKEN, WORKER_RAM, plan.weaken1Threads, [t, d.weaken1 + offset, id]);
-    const g = dispatch(ns, GROW, WORKER_RAM, plan.growThreads, [t, d.grow + offset, id]);
-    const w2 = dispatch(ns, WEAKEN, WORKER_RAM, plan.weaken2Threads, [t, d.weaken2 + offset, id]);
-
-    return (
-        h === plan.hackThreads &&
-        w1 === plan.weaken1Threads &&
-        g === plan.growThreads &&
-        w2 === plan.weaken2Threads
-    );
-}
-
-/**
- * Prepara o alvo (weaken → grow → weaken) usando toda a RAM disponível.
- * @returns {number} ms a aguardar até a prep terminar
- */
-async function runPrep(ns, target, spacing) {
-    const prep = planPrep(ns, target);
-
-    // 1) Weaken inicial para baixar a segurança.
-    if (prep.initialWeaken > 0) {
-        dispatch(ns, WEAKEN, WORKER_RAM, prep.initialWeaken, [target, 0, -1]);
-    }
-
-    // 2) Grow + 3) Weaken do grow, alinhados para pousar após o weaken inicial.
-    if (prep.growThreads > 0) {
-        dispatch(ns, GROW, WORKER_RAM, prep.growThreads, [target, spacing, -1]);
-        dispatch(ns, WEAKEN, WORKER_RAM, prep.weakenAfterGrow, [target, 2 * spacing, -1]);
-    }
-
-    ns.print(
-        `[PREP] ${target} | W:${prep.initialWeaken} G:${prep.growThreads} W2:${prep.weakenAfterGrow}`
-    );
-
-    return prep.weakenTime + 3 * spacing + 500;
-}
-
-/**
- * Escolhe o melhor alvo: maior score entre servidores com dinheiro e root,
- * dentro do nível de hacking do jogador.
- */
-function pickTarget(ns) {
-    const servers = scanAll(ns).filter(s => {
-        return (
+function allocate(ns, spacing, maxTargets) {
+    // Candidatos: root, com dinheiro, dentro do nível de hacking.
+    const candidates = scanAll(ns)
+        .filter(s =>
             ns.hasRootAccess(s) &&
             ns.getServerMaxMoney(s) > 0 &&
             ns.getServerRequiredHackingLevel(s) <= ns.getHackingLevel()
-        );
-    });
+        )
+        .map(s => ({ target: s, potential: potentialScore(ns, s) }))
+        .filter(c => c.potential > 0)
+        .sort((a, b) => b.potential - a.potential);
 
-    const ranked = rankTargets(ns, servers);
-    return ranked.length > 0 ? ranked[0].server : "";
+    let poolGB = getRamPool(ns).reduce((sum, h) => sum + h.free, 0);
+    const alloc = [];
+
+    for (const c of candidates) {
+        if (alloc.length >= maxTargets || poolGB <= 0) break;
+
+        const plan = planBatch(ns, c.target, 0.5, spacing);
+        if (!plan) continue;
+
+        const oneBatchGB = plan.totalThreads * WORKER_RAM;
+        // Saturação: nº de batches que cabem na janela de tempo do alvo.
+        const satBatches = Math.max(1, Math.floor(plan.weakenTime / (4 * spacing)));
+        const usefulGB = satBatches * oneBatchGB;
+
+        const budgetGB = Math.min(usefulGB, poolGB);
+        if (budgetGB < oneBatchGB) continue; // nem 1 batch cabe
+
+        alloc.push({ target: c.target, potential: c.potential, budgetGB });
+        poolGB -= budgetGB;
+    }
+
+    return alloc;
 }
 
-function printStatus(ns, target, plan, launched, planned, poolThreads) {
+/**
+ * Garante que existe um runner por alvo alocado, com o orçamento certo.
+ * Mata runners de alvos que saíram; (re)inicia os que faltam ou cujo orçamento mudou muito.
+ */
+function reconcile(ns, running, alloc, spacing, fraction) {
+    const desired = new Map(alloc.map(a => [a.target, a.budgetGB]));
+
+    // Mata o que não é mais desejado ou que morreu.
+    for (const [target, info] of [...running.entries()]) {
+        if (!desired.has(target) || !ns.isRunning(info.pid)) {
+            if (ns.isRunning(info.pid)) ns.kill(info.pid);
+            running.delete(target);
+        }
+    }
+
+    // Inicia / reajusta.
+    for (const [target, budgetGB] of desired.entries()) {
+        const cur = running.get(target);
+
+        const changedMuch = cur &&
+            Math.abs(budgetGB - cur.budgetGB) / cur.budgetGB > 0.3;
+
+        if (cur && changedMuch) {
+            ns.kill(cur.pid);
+            running.delete(target);
+        }
+
+        if (!running.has(target)) {
+            const pid = ns.exec(RUNNER, "home", 1, target, Math.floor(budgetGB), spacing, fraction);
+            if (pid !== 0) running.set(target, { pid, budgetGB });
+        }
+    }
+}
+
+function printStatus(ns, _ns, alloc) {
     ns.clearLog();
-    ns.print("=== BATCH MANAGER (HWGW) ===");
+    ns.print("=== BATCH SCHEDULER (multi-alvo) ===");
     ns.print("");
-    ns.print(`Alvo:        ${target}`);
-    ns.print(`Hack/batch:  ${(plan.realFraction * 100).toFixed(1)}%`);
-    ns.print(`Yield/batch: ${ns.format.number(plan.expectedYield)}`);
+    ns.print(`Alvos ativos: ${alloc.length}`);
+    ns.print(`Renda potencial: ${ns.format.number(alloc.reduce((s, a) => s + a.potential, 0))}/s`);
     ns.print("");
-    ns.print(`Threads/batch: ${plan.totalThreads}  (H:${plan.hackThreads} W1:${plan.weaken1Threads} G:${plan.growThreads} W2:${plan.weaken2Threads})`);
-    ns.print(`Pool RAM:      ${poolThreads} threads`);
-    ns.print(`Batches:       ${launched}/${planned}`);
-    ns.print("");
-    ns.print(`Weaken time:   ${(plan.weakenTime / 1000).toFixed(1)}s`);
-    ns.print(`Yield/onda:    ${ns.format.number(plan.expectedYield * launched)}`);
+    ns.print(" ALVO                 POTENCIAL/s   ORÇAMENTO   PREP");
+    ns.print("-".repeat(56));
+    for (const a of alloc) {
+        ns.print(
+            `${a.target.padEnd(20)} ` +
+            `${ns.format.number(a.potential).padStart(11)} ` +
+            `${ns.format.ram(a.budgetGB).padStart(10)} ` +
+            `${isPrepped(ns, a.target) ? " ✓" : " ..."}`
+        );
+    }
 }

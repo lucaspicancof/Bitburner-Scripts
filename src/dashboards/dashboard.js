@@ -1,7 +1,6 @@
 import { createDashboard } from "/lib/dashboard-ui.js";
 import { read } from "/lib/telemetry.js";
-import { scanAll, analyzeServer } from "/lib/network.js";
-import { rankTargets } from "/lib/targets.js";
+import { scanAll } from "/lib/network.js";
 import { getAllUpgrades, formatPayback } from "/lib/hacknet.js";
 
 /**
@@ -127,43 +126,34 @@ function renderGeral(ns) {
 
 function renderHack(ns) {
     const snap = read(ns, "hack");
-    let header = `${section("BATCH MANAGER")}<div class="bb-stat"><span class="k">status</span><span class="v">${staleness(snap)}</span></div>`;
+    let header = `${section("BATCH SCHEDULER")}<div class="bb-stat"><span class="k">status</span><span class="v">${staleness(snap)}</span></div>`;
 
     if (snap?.data) {
         const d = snap.data;
         header += `<div class="bb-grid">
-            ${stat("Alvo", d.target)}
-            ${stat("Hack/batch", `${(d.hackPct ?? 0).toFixed(1)}%`)}
-            ${stat("Yield/batch", f.money(ns, d.yield ?? 0))}
-            ${stat("Threads/batch", d.threads ?? "—")}
-            ${stat("Batches/onda", `${d.launched ?? 0}/${d.planned ?? 0}`)}
-            ${stat("Weaken time", `${((d.weakenTime ?? 0) / 1000).toFixed(0)}s`)}
+            ${stat("Alvos ativos", d.count ?? 0)}
+            ${stat("Renda potencial", f.money(ns, d.estIncomePerSec ?? 0) + "/s")}
+            ${stat("Orçamento total", f.ram(ns, d.totalBudgetGB ?? 0))}
         </div>`;
+
+        const rows = (d.targets ?? []).map(t => `
+            <tr>
+                <td>${t.name}</td>
+                <td>${f.money(ns, t.potential)}/s</td>
+                <td>${f.ram(ns, t.budgetGB)}</td>
+                <td>${t.prepped ? '<span class="bb-good">✓</span>' : '<span class="bb-warn">prep</span>'}</td>
+            </tr>`).join("");
+
+        header += section("ALVOS EM ATAQUE") + `
+            <table class="bb-table">
+                <tr><th>server</th><th>potencial</th><th>orçamento</th><th>prep</th></tr>
+                ${rows || '<tr><td colspan="4" class="bb-muted">—</td></tr>'}
+            </table>`;
     } else {
         header += `<div class="bb-muted">batch-manager não está publicando. Rode-o.</div>`;
     }
 
-    // Top alvos (cálculo barato)
-    const servers = scanAll(ns).filter(s =>
-        ns.hasRootAccess(s) &&
-        ns.getServerMaxMoney(s) > 0 &&
-        ns.getServerRequiredHackingLevel(s) <= ns.getHackingLevel()
-    );
-    const ranked = rankTargets(ns, servers).slice(0, 8);
-
-    let rows = ranked.map(t => `
-        <tr>
-            <td>${t.server}</td>
-            <td>${t.prep.toFixed(0)}%</td>
-            <td>${t.ready ? '<span class="bb-good">sim</span>' : '<span class="bb-warn">não</span>'}</td>
-            <td>${f.n(ns, t.effective)}</td>
-        </tr>`).join("");
-
-    return header + section("TOP ALVOS") + `
-        <table class="bb-table">
-            <tr><th>server</th><th>prep</th><th>ready</th><th>score</th></tr>
-            ${rows}
-        </table>`;
+    return header;
 }
 
 /* ---------------- ABA: HACKNET ---------------- */
