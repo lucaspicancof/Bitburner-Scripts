@@ -11,12 +11,12 @@ const STYLE_ID = "bb-dash-style";
 
 const CSS = `
 .bb-dash {
-    position: fixed; top: 80px; right: 24px;
-    width: 580px; max-height: 80vh;
+    position: fixed; top: 70px; right: 24px;
+    width: 900px; max-height: 86vh;
     background: #0b0e14; color: #c9d1d9;
     border: 1px solid #1f2430; border-radius: 10px;
     box-shadow: 0 12px 40px rgba(0,0,0,.55);
-    font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px;
+    font-family: "JetBrains Mono", Consolas, monospace; font-size: 13px;
     z-index: 1500; display: flex; flex-direction: column; overflow: hidden;
 }
 .bb-dash-header {
@@ -26,10 +26,14 @@ const CSS = `
     border-bottom: 1px solid #1f2430;
 }
 .bb-dash-title { font-weight: 600; letter-spacing: .5px; color: #58a6ff; }
-.bb-dash-ctrls { display: flex; gap: 10px; }
-.bb-dash-btn { cursor: pointer; color: #6e7681; padding: 0 2px; user-select: none; }
-.bb-dash-btn:hover { color: #c9d1d9; }
-.bb-dash-close:hover { color: #f85149; }
+.bb-dash-ctrls { display: flex; gap: 6px; }
+.bb-dash-btn {
+    cursor: pointer; color: #8b949e; user-select: none;
+    width: 24px; height: 20px; line-height: 18px; text-align: center;
+    border-radius: 5px; font-size: 15px;
+}
+.bb-dash-btn:hover { color: #fff; background: #1f2430; }
+.bb-dash-close:hover { color: #fff; background: #f85149; }
 .bb-dash-tabs { display: flex; gap: 2px; padding: 6px 8px 0; background: #0d1119; flex-wrap: wrap; }
 .bb-dash-tab {
     background: transparent; color: #8b949e; border: none;
@@ -57,8 +61,8 @@ const CSS = `
 .bb-muted { color: #6e7681; }
 .bb-spark { display: block; }
 .bb-card { background: #0d1119; border: 1px solid #161b22; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
-.bb-card .lbl { color: #8b949e; font-size: 11px; }
-.bb-card .big { color: #e6edf3; font-size: 16px; font-weight: 600; }
+.bb-card .lbl { color: #8b949e; font-size: 12px; }
+.bb-card .big { color: #e6edf3; font-size: 22px; font-weight: 600; margin: 2px 0 6px; }
 `;
 
 function injectCSS() {
@@ -130,15 +134,25 @@ export function createDashboard(cfg) {
         const b = DOC.createElement("button");
         b.className = "bb-dash-tab";
         b.textContent = t.label;
-        b.addEventListener("click", () => setActive(t.id));
+        b.addEventListener("mousedown", e => e.stopPropagation());
+        b.addEventListener("click", () => {
+            setActive(t.id);
+            if (cfg.onTab) cfg.onTab(t.id); // re-render imediato
+        });
         tabBar.appendChild(b);
         buttons[t.id] = b;
     }
     setActive(active);
 
     makeDraggable(win, win.querySelector(".bb-dash-header"));
-    win.querySelector(".bb-dash-min").addEventListener("click", () => win.classList.toggle("collapsed"));
-    win.querySelector(".bb-dash-close").addEventListener("click", () => { closed = true; win.remove(); });
+
+    const minBtn = win.querySelector(".bb-dash-min");
+    minBtn.addEventListener("mousedown", e => e.stopPropagation());
+    minBtn.addEventListener("click", () => win.classList.toggle("collapsed"));
+
+    const closeBtn = win.querySelector(".bb-dash-close");
+    closeBtn.addEventListener("mousedown", e => e.stopPropagation());
+    closeBtn.addEventListener("click", () => { closed = true; win.remove(); });
 
     return {
         getActive: () => active,
@@ -152,30 +166,34 @@ export function createDashboard(cfg) {
 }
 
 /**
- * Gera um sparkline (mini-gráfico de linha) como SVG inline.
+ * Gera um sparkline (gráfico de linha) como SVG responsivo — ocupa 100% da largura
+ * do container e estica em altura conforme `height`. Linha com vetor não-escalonado
+ * pra ficar nítida mesmo esticada.
  * @param {number[]} values
- * @param {{width?:number,height?:number,color?:string,fill?:string}} [opts]
+ * @param {{height?:number,color?:string,fill?:string}} [opts]
  */
 export function sparkline(values, opts = {}) {
-    const w = opts.width ?? 150, h = opts.height ?? 32;
+    const h = opts.height ?? 56;
+    const w = 1000; // espaço virtual; o viewBox estica pra largura real
     const color = opts.color ?? "#58a6ff";
     const fill = opts.fill ?? "rgba(88,166,255,.12)";
+    const style = `width:100%;height:${h}px`;
 
     if (!values || values.length < 2) {
-        return `<svg width="${w}" height="${h}" class="bb-spark"></svg>`;
+        return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="${style}" class="bb-spark"></svg>`;
     }
 
     const min = Math.min(...values);
     const max = Math.max(...values);
     const range = (max - min) || 1;
     const xs = i => (i / (values.length - 1)) * w;
-    const ys = v => h - ((v - min) / range) * (h - 3) - 2;
+    const ys = v => h - ((v - min) / range) * (h - 4) - 2;
 
-    const line = values.map((v, i) => `${xs(i).toFixed(1)},${ys(v).toFixed(1)}`).join(" ");
+    const line = values.map((v, i) => `${xs(i).toFixed(1)},${ys(v).toFixed(2)}`).join(" ");
     const area = `0,${h} ${line} ${w},${h}`;
 
-    return `<svg width="${w}" height="${h}" class="bb-spark">
+    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="${style}" class="bb-spark">
         <polyline points="${area}" fill="${fill}" stroke="none"/>
-        <polyline points="${line}" fill="none" stroke="${color}" stroke-width="1.5"/>
+        <polyline points="${line}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>
     </svg>`;
 }

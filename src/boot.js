@@ -18,13 +18,8 @@ export async function main(ns) {
 
     if (ns.fileExists(overlord, "home")) {
         ns.run(overlord);
-        ns.tprint("boot: reset-loop iniciado (supervisiona o resto).");
+        ns.tprint("boot: reset-loop iniciado (sobe o HUD e supervisiona o resto).");
     } else {
         ns.tprint(`boot: AVISO — ${overlord} não encontrado.`);
-    }
-
-    // Sobe o HUD (não é supervisionado — o usuário pode fechá-lo à vontade).
-    if (ns.fileExists("dashboards/dashboard.js", "home")) {
-        ns.run("dashboards/dashboard.js");
     }
 }

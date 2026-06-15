@@ -14,6 +14,11 @@ import { getAllUpgrades, formatPayback } from "/lib/hacknet.js";
 export async function main(ns) {
     ns.disableLog("ALL");
 
+    // Instância única: mata qualquer outro dashboard (evita listeners brigando).
+    for (const p of ns.ps("home")) {
+        if (p.filename === ns.getScriptName() && p.pid !== ns.pid) ns.kill(p.pid);
+    }
+
     const tabs = [
         { id: "geral", label: "Geral" },
         { id: "scan", label: "Scan" },
@@ -22,9 +27,6 @@ export async function main(ns) {
         { id: "factions", label: "Factions" },
         { id: "scripts", label: "Scripts" }
     ];
-
-    const dash = createDashboard({ id: "bb-dashboard", title: "BITBURNER HUD", tabs });
-    ns.atExit(() => dash.destroy());
 
     // Séries temporais (buffer rolante).
     const MAX = 120;
@@ -40,24 +42,57 @@ export async function main(ns) {
         scripts: () => renderScripts(ns)
     };
 
+    // Cache do HTML de cada aba. O loop (contexto do script) preenche; o clique
+    // (contexto do DOM) só LÊ o cache — NUNCA chama ns, ou o script morre.
+    const cache = {};
+
+    const renderTab = id => {
+        try {
+            const html = renderers[id]();
+            cache[id] = html;
+            dash.setBody(html);
+        } catch (e) {
+            dash.setBody(`<div class="bb-bad">erro: ${e}</div>`);
+        }
+    };
+
+    const dash = createDashboard({
+        id: "bb-dashboard", title: "BITBURNER HUD", tabs,
+        // Handler de clique: só DOM. Mostra o cache (ou "carregando"); o loop
+        // atualiza no próximo tick (≤1s).
+        onTab: id => dash.setBody(cache[id] ?? '<div class="bb-muted">carregando…</div>')
+    });
+    ns.atExit(() => dash.destroy());
+
+    // Renda instantânea = derivada do dinheiro produzido (truthful), não a média.
+    let prevEarned = earnedNow(ns);
+    let prevT = Date.now();
+    let lastIncome = 0;
+
     while (true) {
         if (dash.isClosed()) return;
         dash.reattach();
 
-        // Amostra a série sempre (mesmo minimizado/outra aba).
-        push(hist.income, ns.getTotalScriptIncome()[0]);
+        const earned = earnedNow(ns);
+        const now = Date.now();
+        const dt = (now - prevT) / 1000;
+        lastIncome = dt > 0 ? Math.max(0, (earned - prevEarned) / dt) : lastIncome;
+        prevEarned = earned;
+        prevT = now;
+
+        push(hist.income, lastIncome);
         push(hist.money, ns.getServerMoneyAvailable("home"));
         push(hist.hack, ns.getHackingLevel());
 
-        if (!dash.isCollapsed()) {
-            try {
-                dash.setBody(renderers[dash.getActive()]());
-            } catch (e) {
-                dash.setBody(`<div class="bb-bad">erro ao renderizar: ${e}</div>`);
-            }
-        }
+        if (!dash.isCollapsed()) renderTab(dash.getActive());
         await ns.sleep(1000);
     }
+}
+
+/** Dinheiro acumulado pelos produtores ativos (hacking + hacknet) desde o install. */
+function earnedNow(ns) {
+    const m = ns.getMoneySources().sinceInstall;
+    return m.hacking + m.hacknet;
 }
 
 /* ---------------- helpers ---------------- */
@@ -75,7 +110,7 @@ const bar = r => `<div class="bb-bar"><i style="width:${Math.min(100, Math.max(0
 function card(label, big, spark) {
     return `<div class="bb-card">
         <div class="lbl">${label}</div>
-        <div class="big">${big}</div>
+        ${big ? `<div class="big">${big}</div>` : ""}
         ${spark || ""}
     </div>`;
 }
@@ -90,7 +125,7 @@ function staleness(snap) {
 
 function renderGeral(ns, hist) {
     const money = ns.getServerMoneyAvailable("home");
-    const income = ns.getTotalScriptIncome()[0];
+    const income = hist.income.length ? hist.income[hist.income.length - 1] : 0;
     const player = ns.getPlayer();
 
     let maxRam = 0, usedRam = 0, rooted = 0;
@@ -107,16 +142,22 @@ function renderGeral(ns, hist) {
     const prog = read(ns, "progression");
     const uptime = uptimeStr(ns);
 
-    // Cartões com sparkline.
-    let html = `<div class="bb-grid">
-        ${card("Renda / s", f.money(ns, income), sparkline(hist.income, { color: "#3fb950", fill: "rgba(63,185,80,.12)" }))}
-        ${card("Dinheiro", f.money(ns, money), sparkline(hist.money))}
-    </div>`;
-
-    html += `<div class="bb-card">
-        <div class="lbl">Hacking — nível ${player.skills.hacking}</div>
-        ${sparkline(hist.hack, { color: "#d29922", fill: "rgba(210,153,34,.12)" })}
-    </div>`;
+    // Cartões com sparkline (gráficos grandes, largura cheia).
+    let html = card(
+        `Renda / s — ${f.money(ns, income)}`,
+        "",
+        sparkline(hist.income, { height: 72, color: "#3fb950", fill: "rgba(63,185,80,.12)" })
+    );
+    html += card(
+        `Dinheiro — ${f.money(ns, money)}`,
+        "",
+        sparkline(hist.money, { height: 72 })
+    );
+    html += card(
+        `Hacking — nível ${player.skills.hacking}`,
+        "",
+        sparkline(hist.hack, { height: 56, color: "#d29922", fill: "rgba(210,153,34,.12)" })
+    );
 
     html += section("RECURSOS");
     html += `<div class="bb-stat"><span class="k">RAM da rede (${rooted} servers)</span>

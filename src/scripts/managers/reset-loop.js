@@ -49,6 +49,12 @@ export async function main(ns) {
         "scripts/managers/progression-manager.js"
     ];
 
+    // Sobe o HUD uma vez (não supervisionado — o usuário pode fechá-lo à vontade).
+    const HUD = "dashboards/dashboard.js";
+    if (ns.fileExists(HUD, "home") && !ns.scriptRunning(HUD, "home")) {
+        ns.run(HUD);
+    }
+
     let lastQueued = queuedCount(ns);
     let lastGrowth = Date.now();
 
