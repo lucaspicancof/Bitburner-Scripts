@@ -66,11 +66,15 @@ const CSS = `
 `;
 
 function injectCSS() {
-    if (DOC.getElementById(STYLE_ID)) return;
-    const s = DOC.createElement("style");
-    s.id = STYLE_ID;
+    // Sempre atualiza: o <style> antigo persiste entre reinícios do script, então
+    // se só injetássemos quando ausente, mudanças de CSS nunca apareceriam.
+    let s = DOC.getElementById(STYLE_ID);
+    if (!s) {
+        s = DOC.createElement("style");
+        s.id = STYLE_ID;
+        DOC.head.appendChild(s);
+    }
     s.textContent = CSS;
-    DOC.head.appendChild(s);
 }
 
 function makeDraggable(win, handle) {
@@ -147,8 +151,17 @@ export function createDashboard(cfg) {
     makeDraggable(win, win.querySelector(".bb-dash-header"));
 
     const minBtn = win.querySelector(".bb-dash-min");
+    let collapsed = false;
     minBtn.addEventListener("mousedown", e => e.stopPropagation());
-    minBtn.addEventListener("click", () => win.classList.toggle("collapsed"));
+    minBtn.addEventListener("click", () => {
+        collapsed = !collapsed;
+        win.classList.toggle("collapsed", collapsed);
+        // Esconde direto via estilo inline (não depende da regra CSS).
+        tabBar.style.display = collapsed ? "none" : "";
+        body.style.display = collapsed ? "none" : "";
+        minBtn.textContent = collapsed ? "▢" : "—";
+        minBtn.title = collapsed ? "restaurar" : "minimizar";
+    });
 
     const closeBtn = win.querySelector(".bb-dash-close");
     closeBtn.addEventListener("mousedown", e => e.stopPropagation());
