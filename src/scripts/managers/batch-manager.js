@@ -26,14 +26,16 @@ export async function main(ns) {
     ns.ui.openTail();
 
     const flags = ns.flags([
-        ["max-targets", 8],
+        ["max-share", 0.25],   // teto de fração do pool por alvo (garante espalhar)
+        ["max-targets", 0],    // 0 = sem limite; nº de alvos emerge da RAM disponível
         ["spacing", 200],
         ["fraction", 0.5]
     ]);
 
     const spacing = flags.spacing;
     const fraction = flags.fraction;
-    const maxTargets = flags["max-targets"];
+    const maxShare = flags["max-share"];
+    const hardCap = flags["max-targets"];
 
     // Limpa runners órfãos de uma execução anterior (evita duplicar alvos).
     for (const p of ns.ps("home")) {
@@ -48,7 +50,7 @@ export async function main(ns) {
     });
 
     while (true) {
-        const alloc = allocate(ns, spacing, maxTargets);
+        const alloc = allocate(ns, spacing, maxShare, hardCap);
         reconcile(ns, running, alloc, spacing, fraction);
 
         publish(ns, "hack", {
@@ -69,9 +71,15 @@ export async function main(ns) {
 }
 
 /**
- * Decide a lista de alvos e o orçamento (GB) de cada um, gulosamente por potencial.
+ * Decide a lista de alvos e o orçamento (GB) de cada um.
+ *
+ * Modular pela RAM: cada alvo recebe o orçamento que CONSEGUE usar (saturação =
+ * batches que cabem na janela de tempo × RAM/batch), limitado a `maxShare` do pool
+ * (pra nenhum hogar tudo). Desce o ranking de potencial até a RAM acabar — então o
+ * NÚMERO de alvos cresce sozinho conforme sobra RAM. `hardCap` (0 = sem limite) é
+ * só uma trava de segurança.
  */
-function allocate(ns, spacing, maxTargets) {
+function allocate(ns, spacing, maxShare, hardCap) {
     // Candidatos: root, com dinheiro, dentro do nível de hacking.
     const candidates = scanAll(ns)
         .filter(s =>
@@ -87,12 +95,11 @@ function allocate(ns, spacing, maxTargets) {
     let poolGB = initialPool;
     const alloc = [];
 
-    // Teto por alvo: impede que um servidor enorme engula o pool inteiro e
-    // força o scheduler a espalhar entre vários. Com 256TB e 8 alvos → 32TB cada.
-    const maxShareGB = initialPool / maxTargets;
+    const capGB = initialPool * maxShare;
 
     for (const c of candidates) {
-        if (alloc.length >= maxTargets || poolGB <= 0) break;
+        if (hardCap > 0 && alloc.length >= hardCap) break;
+        if (poolGB <= 0) break;
 
         const plan = planBatch(ns, c.target, 0.5, spacing);
         if (!plan) continue;
@@ -102,7 +109,7 @@ function allocate(ns, spacing, maxTargets) {
         const satBatches = Math.max(1, Math.floor(plan.weakenTime / (4 * spacing)));
         const usefulGB = satBatches * oneBatchGB;
 
-        const budgetGB = Math.min(usefulGB, maxShareGB, poolGB);
+        const budgetGB = Math.min(usefulGB, capGB, poolGB);
         if (budgetGB < oneBatchGB) continue; // nem 1 batch cabe
 
         alloc.push({ target: c.target, potential: c.potential, budgetGB });

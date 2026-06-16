@@ -28,13 +28,22 @@ export async function main(ns) {
     ns.disableLog("ALL");
     ns.ui.openTail();
 
+    const flags = ns.flags([["reserve", 1e9]]); // dinheiro preservado p/ openers/travel/preços
+
     let totalBought = 0;
     let notified = false;
     let lastAction = "iniciando";
 
     while (true) {
         const owned = ownedOrQueued(ns);
-        const plan = buildPlan(ns);
+        let plan = buildPlan(ns);
+
+        // --- 0) DOAR rep nas factions com favor suficiente (instantâneo, $ é abundante) ---
+        const donated = donateForRep(ns, plan, flags.reserve);
+        if (donated) {
+            plan = buildPlan(ns); // rep mudou → replaneja
+            lastAction = `doou rep (${donated} faction[s])`;
+        }
 
         // --- 1) COMPRAR o que dá (maior valor primeiro) ---
         const buyable = buyableNow(ns, plan, owned)
@@ -87,6 +96,44 @@ export async function main(ns) {
         publishProgress(ns, totalBought, target);
         await ns.sleep(10000);
     }
+}
+
+/**
+ * Doa dinheiro pra ganhar reputação nas factions com favor >= getFavorToDonate().
+ * Pra cada uma, doa o suficiente pra cobrir o maior repReq entre os augs faltantes
+ * (cobre todos os menores de uma vez), respeitando a reserva. Como o dinheiro é
+ * abundante, isso torna a rep dessas factions instantânea.
+ *
+ * @returns {number} quantas factions receberam doação
+ */
+function donateForRep(ns, plan, reserve) {
+    const favorMin = ns.getFavorToDonate();
+    const player = ns.getPlayer();
+    const perDollar = ns.formulas.reputation.repFromDonation(1, player);
+    if (perDollar <= 0) return 0;
+
+    const byFaction = new Map();
+    for (const e of plan) {
+        if (!byFaction.has(e.faction)) byFaction.set(e.faction, []);
+        byFaction.get(e.faction).push(e);
+    }
+
+    let count = 0;
+    for (const [faction, augs] of byFaction) {
+        if (ns.singularity.getFactionFavor(faction) < favorMin) continue;
+
+        const have = ns.singularity.getFactionRep(faction);
+        const needRep = Math.max(...augs.map(a => a.repReq));
+        if (have >= needRep) continue;
+
+        const cost = Math.ceil((needRep - have) / perDollar * 1.02); // 2% de folga
+        const afford = ns.getServerMoneyAvailable("home") - reserve;
+        if (afford <= 0) continue;
+
+        const amount = Math.min(cost, afford); // doa o que der dentro da reserva
+        if (ns.singularity.donateToFaction(faction, amount)) count++;
+    }
+    return count;
 }
 
 /**

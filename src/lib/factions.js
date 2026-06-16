@@ -34,10 +34,13 @@ export const CITY_FACTIONS = [
 ];
 
 // Factions livres pra aceitar convite a qualquer momento (sem conflito).
+// Daedalus é o endgame (30 augs + $100b + hacking 2500): o jogo convida sozinho
+// quando você qualifica — sem backdoor nem viagem, só aceitar. Leva ao The Red Pill.
 export const FREE_FACTIONS = new Set([
     ...HACKING_FACTIONS.map(f => f.name),
     "Netburners",
-    "Tian Di Hui"
+    "Tian Di Hui",
+    "Daedalus"
 ]);
 
 /**
