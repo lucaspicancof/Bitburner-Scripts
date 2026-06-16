@@ -1,13 +1,17 @@
-import { HACKING_FACTIONS, CITY_FACTIONS, ALLOWLIST } from "/lib/factions.js";
+import { HACKING_FACTIONS, CITY_FACTIONS, TIAN_DI_HUI, FREE_FACTIONS, cityEnemies } from "/lib/factions.js";
+import { ownedOrQueued, NEUROFLUX } from "/lib/augmentations.js";
 import { findPath } from "/lib/pathfind.js";
 import { scanAll } from "/lib/network.js";
 
 /**
- * Faction Manager — fecha o elo que faltava na autonomia: pós-reset, re-entra nas
- * factions sozinho. Aceita convites allowlisted, re-backdoora os servidores das
- * factions de hacking (em ordem de dificuldade) e viaja pra habilitar as de cidade.
+ * Faction Manager — re-entra nas factions sozinho pós-reset.
  *
- * Roda em paralelo ao progression-manager (que farma rep nas já ingressadas).
+ * Factions de hacking (backdoor) e livres (Netburners, Tian Di Hui) são sempre
+ * perseguidas. As CITY FACTIONS são EXCLUSIVAS (inimigas entre si): o manager
+ * escolhe a de maior prioridade que ainda tem augs que faltam, viaja, entra nela,
+ * e a partir daí NUNCA entra nas inimigas dela na run atual. Quando os augs de uma
+ * acabam (todos comprados), ela é pulada — abrindo espaço pra próxima (no reset
+ * seguinte, quando as memberships zeram).
  *
  * @param {NS} ns
  */
@@ -19,16 +23,25 @@ export async function main(ns) {
 
     while (true) {
         const joined = new Set(ns.getPlayer().factions);
+        const owned = ownedOrQueued(ns);
+        const blocked = cityEnemies(joined);         // inimigas das já ingressadas
         const network = new Set(scanAll(ns));
 
-        // 1) Aceita convites de factions na allowlist.
-        for (const fac of ns.singularity.checkFactionInvitations()) {
-            if (ALLOWLIST.has(fac) && !joined.has(fac)) {
-                if (ns.singularity.joinFaction(fac)) {
-                    joined.add(fac);
-                    lastAction = `entrou em ${fac}`;
-                    ns.toast(`Entrou na faction: ${fac}`, "success");
-                }
+        // Alvo de city faction: maior prioridade, não bloqueada, com dinheiro e augs faltando.
+        const cityTarget = CITY_FACTIONS
+            .filter(f => !joined.has(f.name) && !blocked.has(f.name))
+            .filter(f => ns.getServerMoneyAvailable("home") >= f.money)
+            .filter(f => hasWantedAugs(ns, f.name, owned))
+            .sort((a, b) => a.priority - b.priority)[0] || null;
+
+        // 1) Aceita convites: livres sempre; city só o alvo; nunca bloqueadas.
+        for (const inv of ns.singularity.checkFactionInvitations()) {
+            if (joined.has(inv) || blocked.has(inv)) continue;
+            const ok = FREE_FACTIONS.has(inv) || (cityTarget && inv === cityTarget.name);
+            if (ok && ns.singularity.joinFaction(inv)) {
+                joined.add(inv);
+                lastAction = `entrou em ${inv}`;
+                ns.toast(`Entrou na faction: ${inv}`, "success");
             }
         }
 
@@ -36,8 +49,7 @@ export async function main(ns) {
         let didBackdoor = false;
         for (const f of HACKING_FACTIONS) {
             if (joined.has(f.name)) continue;
-            if (!network.has(f.server)) continue;
-            if (!ns.hasRootAccess(f.server)) continue;
+            if (!network.has(f.server) || !ns.hasRootAccess(f.server)) continue;
             if (ns.getHackingLevel() < ns.getServerRequiredHackingLevel(f.server)) continue;
             if (ns.getServer(f.server).backdoorInstalled) continue;
 
@@ -47,24 +59,38 @@ export async function main(ns) {
             break;
         }
 
-        // 3) Factions de cidade: viaja pra habilitar o convite (uma por ciclo).
+        // 3) Viagem (uma por ciclo): prioriza Tian Di Hui (Neuroreceptor), depois o cityTarget.
         if (!didBackdoor) {
             const invited = new Set(ns.singularity.checkFactionInvitations());
-            for (const f of CITY_FACTIONS) {
-                if (joined.has(f.name) || invited.has(f.name)) continue;
-                if (ns.getServerMoneyAvailable("home") < f.money) continue;
-                if (ns.getHackingLevel() < f.hack) continue;
+            const player = ns.getPlayer();
 
-                if (ns.getPlayer().city !== f.city) {
-                    ns.singularity.travelToCity(f.city);
-                    lastAction = `viajou p/ ${f.city} (${f.name})`;
-                }
-                break; // uma cidade por ciclo; o convite chega no próximo loop
+            const wantTDH = !joined.has(TIAN_DI_HUI.name)
+                && !invited.has(TIAN_DI_HUI.name)
+                && ns.getHackingLevel() >= TIAN_DI_HUI.hack
+                && ns.getServerMoneyAvailable("home") >= TIAN_DI_HUI.money
+                && hasWantedAugs(ns, TIAN_DI_HUI.name, owned);
+
+            if (wantTDH && !TIAN_DI_HUI.cities.includes(player.city)) {
+                ns.singularity.travelToCity(TIAN_DI_HUI.cities[0]);
+                lastAction = `viajou p/ ${TIAN_DI_HUI.cities[0]} (Tian Di Hui)`;
+            } else if (cityTarget && !invited.has(cityTarget.name) && player.city !== cityTarget.city) {
+                ns.singularity.travelToCity(cityTarget.city);
+                lastAction = `viajou p/ ${cityTarget.city} (${cityTarget.name})`;
             }
         }
 
-        printStatus(ns, joined, lastAction);
+        printStatus(ns, joined, blocked, cityTarget, lastAction);
         await ns.sleep(8000);
+    }
+}
+
+/** A faction ainda oferece algum aug (fora NeuroFlux) que não temos? */
+function hasWantedAugs(ns, faction, owned) {
+    try {
+        return ns.singularity.getAugmentationsFromFaction(faction)
+            .some(a => a !== NEUROFLUX && !owned.has(a));
+    } catch {
+        return true; // na dúvida, persegue
     }
 }
 
@@ -72,14 +98,13 @@ export async function main(ns) {
 async function doBackdoor(ns, server) {
     const path = findPath(ns, server);
     if (!path) return;
-
     for (const hop of path.slice(1)) ns.singularity.connect(hop);
     await ns.singularity.installBackdoor();
     ns.singularity.connect("home");
     ns.toast(`Backdoor instalado: ${server}`, "success");
 }
 
-function printStatus(ns, joined, lastAction) {
+function printStatus(ns, joined, blocked, cityTarget, lastAction) {
     ns.clearLog();
     ns.print("=== FACTION MANAGER ===");
     ns.print("");
@@ -87,16 +112,14 @@ function printStatus(ns, joined, lastAction) {
     for (const f of joined) ns.print(`  ✓ ${f}`);
     ns.print("");
 
-    const pending = [...HACKING_FACTIONS, ...CITY_FACTIONS]
-        .filter(f => !joined.has(f.name));
-    if (pending.length) {
-        ns.print("Pendentes:");
-        for (const f of pending) {
-            const srv = f.server ? ` (backdoor ${f.server}, hack ${f.hack})` : ` (cidade ${f.city})`;
-            ns.print(`  ✗ ${f.name}${srv}`);
-        }
-    } else {
-        ns.print("Todas as factions-alvo ingressadas.");
+    if (cityTarget) ns.print(`Alvo de cidade: ${cityTarget.name} (prioridade ${cityTarget.priority})`);
+    if (blocked.size) ns.print(`Bloqueadas (inimigas): ${[...blocked].join(", ")}`);
+    ns.print("");
+
+    const pendingHack = HACKING_FACTIONS.filter(f => !joined.has(f.name));
+    if (pendingHack.length) {
+        ns.print("Hacking pendentes:");
+        for (const f of pendingHack) ns.print(`  ✗ ${f.name} (backdoor ${f.server}, hack ${f.hack})`);
     }
     ns.print("");
     ns.print(`Ação: ${lastAction}`);

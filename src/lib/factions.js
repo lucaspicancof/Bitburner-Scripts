@@ -1,6 +1,6 @@
 /**
  * Dados de factions pro faction-manager (BN1, foco hacking).
- * Requisitos da doc oficial. Só factions sem combate e sem conflito ruim.
+ * Requisitos da doc oficial. Só factions sem combate.
  */
 
 // Factions de hacking: backdoor no servidor → convite. Ordem por dificuldade.
@@ -11,18 +11,44 @@ export const HACKING_FACTIONS = [
     { name: "BitRunners", server: "run4theh111z", hack: 505 }
 ];
 
-// Factions que precisam viajar + dinheiro (+ hacking). Convite aparece estando na
-// cidade com os requisitos. Sector-12 e Aevum são compatíveis entre si.
+// Tian Di Hui — sem conflito; precisa estar em uma destas cidades. Dá Neuroreceptor.
+export const TIAN_DI_HUI = {
+    name: "Tian Di Hui",
+    cities: ["Chongqing", "New Tokyo", "Ishima"],
+    money: 1e6,
+    hack: 50
+};
+
+/**
+ * City factions EXCLUSIVAS: cada uma é inimiga das outras (com dois campos
+ * compatíveis: {Sector-12, Aevum} e {Chongqing, New Tokyo, Ishima}; Volhaven sozinha).
+ * Entrar em uma barra as inimigas dela na run atual. priority: menor = primeiro.
+ */
 export const CITY_FACTIONS = [
-    { name: "Tian Di Hui", city: "Chongqing", money: 1e6, hack: 50 }, // dá Neuroreceptor
-    { name: "Sector-12", city: "Sector-12", money: 15e6, hack: 0 },   // dá CashRoot
-    { name: "Aevum", city: "Aevum", money: 40e6, hack: 0 }            // dá PCMatrix
+    { name: "Sector-12", city: "Sector-12", money: 15e6, priority: 1, enemies: ["Chongqing", "New Tokyo", "Ishima", "Volhaven"] },
+    { name: "Aevum", city: "Aevum", money: 40e6, priority: 2, enemies: ["Chongqing", "New Tokyo", "Ishima", "Volhaven"] },
+    { name: "Volhaven", city: "Volhaven", money: 50e6, priority: 3, enemies: ["Sector-12", "Aevum", "Chongqing", "New Tokyo", "Ishima"] },
+    { name: "Chongqing", city: "Chongqing", money: 20e6, priority: 4, enemies: ["Sector-12", "Aevum", "Volhaven"] },
+    { name: "New Tokyo", city: "New Tokyo", money: 20e6, priority: 5, enemies: ["Sector-12", "Aevum", "Volhaven"] },
+    { name: "Ishima", city: "Ishima", money: 30e6, priority: 6, enemies: ["Sector-12", "Aevum", "Volhaven"] }
 ];
 
-// Netburners: convida sozinho quando o hacknet atende; só aceitar.
-// Allowlist: tudo que o manager pode joinar automaticamente.
-export const ALLOWLIST = new Set([
+// Factions livres pra aceitar convite a qualquer momento (sem conflito).
+export const FREE_FACTIONS = new Set([
     ...HACKING_FACTIONS.map(f => f.name),
-    ...CITY_FACTIONS.map(f => f.name),
-    "Netburners"
+    "Netburners",
+    "Tian Di Hui"
 ]);
+
+/**
+ * Conjunto de factions BLOQUEADAS: inimigas de qualquer faction já ingressada.
+ * @param {Set<string>|string[]} joined
+ */
+export function cityEnemies(joined) {
+    const map = Object.fromEntries(CITY_FACTIONS.map(f => [f.name, f.enemies]));
+    const blocked = new Set();
+    for (const j of joined) {
+        for (const e of (map[j] || [])) blocked.add(e);
+    }
+    return blocked;
+}
