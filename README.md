@@ -11,7 +11,7 @@ src/
 ├── lib/          funções reutilizáveis, puras (rede, scoring, batches, ram, hacknet...)
 ├── scripts/
 │   ├── workers/  hack / grow / weaken — primitivos burros, só executam
-│   └── managers/ os loops de automação (root, batch, hacknet, faction, progression, reset-loop)
+│   └── managers/ os loops de automação (root, batch, hacknet, faction, progression, contract, reset-loop)
 ├── analysis/     relatórios que rodo sob demanda
 └── dashboards/   uns overlays visuais em HTML
 ```
@@ -43,7 +43,7 @@ O `install.js` chama `installAugmentations` passando o `boot.js`, que roda depoi
 
 ### Ligo e esqueço
 
-O `faction-manager` fecha o elo da autonomia: pós-reset ele re-backdoora os servidores das factions de hacking (em ordem de dificuldade), viaja pras factions de cidade e aceita os convites sozinho — enquanto o progression farma rep e compra augs por densidade de valor.
+O `faction-manager` fecha o elo da autonomia: pós-reset ele re-backdoora os servidores das factions de hacking (em ordem de dificuldade), viaja pras factions de cidade e aceita os convites sozinho — enquanto o progression farma rep e compra augs por densidade de valor. Como dinheiro é abundante, o progression ainda **doa** pra comprar rep nas factions com favor ≥ 150 (instantâneo) e o reset-loop enche de NeuroFlux antes de cada install. Em paralelo, o `contract-manager` resolve os Coding Contracts que aparecem na rede (bônus de dinheiro e rep).
 
 Por cima de tudo tem o `reset-loop`, que é o orquestrador de topo: ele mantém os outros managers vivos (relança qualquer um que morra) e decide sozinho a hora de instalar. A regra que usei é simples — os primeiros augs entram na fila rápido, depois o farm de rep estagna; quando a fila não cresce há um tempo, o retorno virou marginal e ele dá o reset. Aí o `boot.js` sobe ele de novo e o ciclo recomeça.
 

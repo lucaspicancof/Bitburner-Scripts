@@ -80,32 +80,50 @@ export function queuedCount(ns) {
 }
 
 /**
- * Compra NeuroFlux repetidamente enquanto houver rep e dinheiro.
- * NFG é o único aug repetível — bom dreno pro dinheiro excedente antes do reset.
+ * Compra NeuroFlux repetidamente. NFG é o único aug repetível e sobe TODOS os
+ * multiplicadores — ótimo dreno pro dinheiro excedente antes do reset. Quando a
+ * rep não basta mas a faction tem favor >= getFavorToDonate(), DOA pra cobrir a
+ * rep (dinheiro é abundante), maximizando os níveis comprados.
+ *
  * @param {NS} ns
+ * @param {number} reserve  dinheiro a preservar (default 0: na hora do install dá pra zerar)
  * @returns {number} quantos níveis comprou
  */
-export function buyMaxNeuroFlux(ns) {
+export function buyMaxNeuroFlux(ns, reserve = 0) {
     const factions = ns.getPlayer().factions;
     if (factions.length === 0) return 0;
 
+    const favorMin = ns.getFavorToDonate();
     let bought = 0;
 
     while (true) {
-        // Faction com maior rep tende a permitir o próximo nível de NFG.
-        const faction = factions
-            .slice()
-            .sort((a, b) =>
-                ns.singularity.getFactionRep(b) - ns.singularity.getFactionRep(a)
-            )[0];
-
         const price = ns.singularity.getAugmentationPrice(NEUROFLUX);
         const repReq = ns.singularity.getAugmentationRepReq(NEUROFLUX);
+        if (ns.getServerMoneyAvailable("home") - price < reserve) break;
 
-        if (ns.singularity.getFactionRep(faction) < repReq) break;
-        if (ns.getServerMoneyAvailable("home") < price) break;
-        if (!ns.singularity.purchaseAugmentation(faction, NEUROFLUX)) break;
+        // Factions ordenadas por rep (a de maior rep é a candidata natural).
+        const sorted = factions.slice().sort((a, b) =>
+            ns.singularity.getFactionRep(b) - ns.singularity.getFactionRep(a));
 
+        // 1) Alguma já tem rep suficiente?
+        let chosen = sorted.find(f => ns.singularity.getFactionRep(f) >= repReq);
+
+        // 2) Senão, doar numa com favor suficiente.
+        if (!chosen) {
+            const donatable = sorted.find(f => ns.singularity.getFactionFavor(f) >= favorMin);
+            if (!donatable) break;
+
+            const perDollar = ns.formulas.reputation.repFromDonation(1, ns.getPlayer());
+            if (perDollar <= 0) break;
+
+            const gap = repReq - ns.singularity.getFactionRep(donatable);
+            const cost = Math.ceil(gap / perDollar * 1.02);
+            if (ns.getServerMoneyAvailable("home") - cost - price < reserve) break;
+            if (!ns.singularity.donateToFaction(donatable, cost)) break;
+            chosen = donatable;
+        }
+
+        if (!ns.singularity.purchaseAugmentation(chosen, NEUROFLUX)) break;
         bought++;
     }
 

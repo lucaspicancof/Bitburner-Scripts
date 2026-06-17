@@ -29,7 +29,7 @@ export async function main(ns) {
         ["auto", true],
         ["max-farm-min", 30],
         ["min-augs", 1],
-        ["nfg", false],
+        ["nfg", true],
         ["no-install", false]
     ]);
 
@@ -46,7 +46,8 @@ export async function main(ns) {
         "scripts/managers/batch-manager.js",
         "scripts/managers/hacknet-manager.js",
         "scripts/managers/faction-manager.js",
-        "scripts/managers/progression-manager.js"
+        "scripts/managers/progression-manager.js",
+        "scripts/managers/contract-manager.js"
     ];
 
     // Sobe o HUD uma vez (não supervisionado — o usuário pode fechá-lo à vontade).
