@@ -41,7 +41,8 @@ export async function main(ns) {
     const CEIL_MIN = 120;
     const RECOMPUTE_MS = 60000;
 
-    const CHILDREN = [
+    // Núcleo universal: roda em qualquer BitNode.
+    const CORE = [
         "scripts/managers/root-manager.js",
         "scripts/managers/batch-manager.js",
         "scripts/managers/hacknet-manager.js",
@@ -49,6 +50,17 @@ export async function main(ns) {
         "scripts/managers/progression-manager.js",
         "scripts/managers/contract-manager.js"
     ];
+
+    // Camadas específicas por BitNode — plugam no núcleo conforme forem criadas.
+    const BN_MANAGERS = {
+        // 2: ["bitnodes/bn2/gang-manager.js"],
+        // 3: ["bitnodes/bn3/corp-manager.js"],
+        // 6: ["bitnodes/bn6/bladeburner-manager.js"],
+    };
+
+    const bn = ns.getResetInfo().currentNode;
+    const extra = (BN_MANAGERS[bn] || []).filter(f => ns.fileExists(f, "home"));
+    const CHILDREN = [...CORE, ...extra];
 
     // Sobe o HUD uma vez (não supervisionado — o usuário pode fechá-lo à vontade).
     const HUD = "dashboards/dashboard.js";
